@@ -21,6 +21,11 @@ strip_paths() { sed -e "s#$ROOT/build-deps/src/xemu/##g" -e "s#$ROOT/##g" -e 's#
 echo "==== result: ninja exit $status"
 echo "==== steps: $(grep -c '^\[[0-9]*/[0-9]*\]' "$LOG") run, $(grep -c '^FAILED' "$LOG") failed"
 echo
+echo "==== first failures, in full"
+# Not every failure is a compiler error (generators, scripts), so show the
+# raw output that follows the first few FAILED lines.
+awk '/^FAILED/ { n++; left = 30 } n <= 4 && left > 0 { print; left-- }' "$LOG" | strip_paths | cut -c1-300
+echo
 echo "==== files that failed"
 grep '^FAILED' "$LOG" | strip_paths | sed 's/^FAILED: //' | cut -c1-140 | sort | head -200
 echo

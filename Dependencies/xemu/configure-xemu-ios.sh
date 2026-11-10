@@ -67,5 +67,11 @@ cd "$BUILD"
     --disable-curl \
     --disable-capstone
 
+# xemu generates its settings header with a Python script that reads YAML.
+# configure builds its own Python environment, which does not include PyYAML.
+"$BUILD/pyvenv/bin/python3" -m pip install --quiet pyyaml \
+    || python3 -m pip install --quiet --break-system-packages pyyaml
+"$BUILD/pyvenv/bin/python3" -c "import yaml; print('PyYAML', yaml.__version__)"
+
 echo
 echo "configure passed."
