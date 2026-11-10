@@ -36,11 +36,13 @@ targets:
       - path: Core/src              # the portable C++ core, compiled into the app
       - path: Core/include
         buildPhase: none
+      - path: Resources/Assets.xcassets   # app icon (regenerate with scripts/make_icon.py)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.ember.Ember
         PRODUCT_NAME: Ember
         INFOPLIST_FILE: Resources/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_ENTITLEMENTS: Resources/Ember.entitlements
         SWIFT_OBJC_BRIDGING_HEADER: Bridge/Ember-Bridging-Header.h

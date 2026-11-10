@@ -4,6 +4,10 @@ import UniformTypeIdentifiers
 @MainActor
 struct LibraryView: View {
     @EnvironmentObject private var library: GameLibrary
+    @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var jit: JITCoordinator
+    @State private var jitBusy = false
+    @State private var jitMessage: String?
     @State private var running: Game?
     @State private var showImporter = false
     @State private var showSettings = false
@@ -48,10 +52,16 @@ struct LibraryView: View {
                         .accessibilityLabel("Rescan")
                     Button(action: { showImporter = true }) { Image(systemName: "plus") }
                         .accessibilityLabel("Add games")
+                    jitButton
                 }
             }
         }
         .navigationViewStyle(.stack)
+        .alert("JIT was not enabled", isPresented: Binding(get: { jitMessage != nil }, set: { if !$0 { jitMessage = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(jitMessage ?? "")
+        }
         .task { await library.rescan() }
         // Files and folders are opened in place, not copied (see GameLibrary).
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.item, .folder],
@@ -60,6 +70,32 @@ struct LibraryView: View {
         }
         .sheet(isPresented: $showSettings) { SettingsView() }
         .fullScreenCover(item: $running) { game in EmulationView(game: game) }
+    }
+
+    /// Top-right shortcut for the step that has to be repeated every time the
+    /// app is opened: hand off to StikDebug and set up JIT memory.
+    private var jitButton: some View {
+        let ready = jit.state == .ready
+        return Button(action: enableJIT) {
+            if jitBusy {
+                ProgressView()
+            } else {
+                Label(ready ? "JIT On" : "Enable JIT", systemImage: ready ? "bolt.fill" : "bolt")
+                    .labelStyle(.titleAndIcon)
+            }
+        }
+        .tint(ready ? .green : nil)
+        .disabled(jitBusy || ready)
+        .accessibilityLabel(ready ? "JIT is on" : "Enable JIT")
+    }
+
+    private func enableJIT() {
+        jitBusy = true
+        Task {
+            let enabled = await jit.acquire(settings: settings)
+            jitBusy = false
+            if !enabled { jitMessage = jit.statusText + "\n\nDetails are in Settings › JIT log." }
+        }
     }
 
     private var emptyState: some View {
