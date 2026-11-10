@@ -89,4 +89,26 @@ edit("ui/meson.build",
      "system_ss.add_all(xemu_ss)",
      "if not host_ios\n  system_ss.add_all(xemu_ss)\nendif")
 
+# --- 6. Let Meson find CMake when cross-compiling --------------------------------------
+# One of xemu's components (the vertex-shader CPU emulator) is a CMake
+# project. In a cross build Meson only uses tools named in the cross file,
+# and configure does not list cmake there.
+edit("configure",
+     '  echo "pkgconfig = [$(meson_quote $pkg_config)]" >> $cross\n',
+     '  echo "pkgconfig = [$(meson_quote $pkg_config)]" >> $cross\n'
+     '  echo "cmake = [\'cmake\']" >> $cross\n')
+
+# --- 7. No OpenGL renderer on iOS ----------------------------------------------------------
+# The offscreen-GL helper and the OpenGL renderer (with its GLSL generator)
+# need desktop OpenGL through SDL. The Vulkan renderer is already optional.
+edit("hw/xbox/nv2a/pgraph/thirdparty/meson.build",
+     "libgloffscreen = static_library(",
+     "if host_ios\n  gloffscreen = not_found\nelse\nlibgloffscreen = static_library(")
+edit("hw/xbox/nv2a/pgraph/thirdparty/meson.build",
+     "include_directories: ['gloffscreen'])\n",
+     "include_directories: ['gloffscreen'])\nendif\n")
+edit("hw/xbox/nv2a/pgraph/meson.build",
+     "subdir('gl')\nsubdir('glsl')\n",
+     "if not host_ios\n  subdir('gl')\n  subdir('glsl')\nendif\n")
+
 print(f"patch_xemu: {applied} edits applied")
