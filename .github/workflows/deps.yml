@@ -57,6 +57,25 @@ jobs:
           path: build-deps/prefix
           if-no-files-found: error
 
+      # xemu's DSP library is Rust and has no iOS release; build it from source.
+      - name: Restore DSP library cache
+        id: dsp
+        uses: actions/cache/restore@v4
+        with:
+          path: build-deps/dsp56300
+          key: ios-dsp56300-${{ hashFiles('Dependencies/xemu/build-dsp56300-ios.sh') }}
+
+      - name: Build DSP library for iOS
+        if: steps.dsp.outputs.cache-hit != 'true'
+        run: Dependencies/xemu/build-dsp56300-ios.sh
+
+      - name: Save DSP library cache
+        if: steps.dsp.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build-deps/dsp56300
+          key: ios-dsp56300-${{ hashFiles('Dependencies/xemu/build-dsp56300-ios.sh') }}
+
       - name: Configure xemu for iOS
         run: Dependencies/xemu/configure-xemu-ios.sh
 

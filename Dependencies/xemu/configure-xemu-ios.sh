@@ -31,6 +31,17 @@ git -C "$SRC" checkout -q -f FETCH_HEAD
 git -C "$SRC" clean -q -fdx
 python3 "$HERE/patch_xemu.py" "$SRC"
 
+# xemu would download a macOS build of the DSP library. Provide the iOS build
+# (Dependencies/xemu/build-dsp56300-ios.sh) as the tarball it looks for first.
+DSP_VERSION="$(sed -n "s/^project('dsp56300', version: '\(.*\)')/\1/p" "$SRC/subprojects/dsp56300/meson.build")"
+DSP_TARBALL="$ROOT/build-deps/dsp56300/dsp56300-$DSP_VERSION-aarch64-apple-darwin.tar.gz"
+if [ ! -f "$DSP_TARBALL" ]; then
+    echo "error: $DSP_TARBALL not found; run Dependencies/xemu/build-dsp56300-ios.sh" >&2
+    echo "       (xemu wants dsp56300 $DSP_VERSION)" >&2
+    exit 1
+fi
+cp "$DSP_TARBALL" "$SRC/subprojects/dsp56300/"
+
 # Only our prefix is visible to pkg-config, so nothing built for macOS leaks in.
 export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
 
