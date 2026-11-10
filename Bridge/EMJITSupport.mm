@@ -4,7 +4,10 @@
 #import "../Core/src/cpu/jit/jit_memory.h"
 
 #import <TargetConditionals.h>
+#import <fcntl.h>
 #import <os/proc.h>
+#import <sys/sysctl.h>
+#import <sys/time.h>
 #import <string>
 #import <unistd.h>
 
@@ -34,6 +37,36 @@ static BOOL EMFail(NSError **error, NSString *message) {
                                  userInfo:@{NSLocalizedDescriptionKey : message}];
     }
     return NO;
+}
+
+// MARK: - Trace file
+
+static const char *EMTracePath(void) {
+    static char path[1024];
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSURL *dir = [[NSFileManager.defaultManager URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].firstObject
+            URLByAppendingPathComponent:@"Ember" isDirectory:YES];
+        [NSFileManager.defaultManager createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:nil error:nil];
+        strlcpy(path, [dir URLByAppendingPathComponent:@"jit-trace.txt"].fileSystemRepresentation, sizeof(path));
+    });
+    return path;
+}
+
+// One open/write/close per line. Data handed to write() survives the process
+// being killed, which is the only failure this has to outlive.
+static void EMTraceLine(const char *message) {
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    struct tm parts;
+    localtime_r(&now.tv_sec, &parts);
+    char line[320];
+    const int length = snprintf(line, sizeof(line), "%02d:%02d:%02d.%03d  %s\n", parts.tm_hour, parts.tm_min, parts.tm_sec,
+                                (int)(now.tv_usec / 1000), message);
+    const int fd = open(EMTracePath(), O_WRONLY | O_APPEND | O_CREAT, 0644);
+    if (fd < 0) return;
+    if (length > 0) (void)write(fd, line, (size_t)MIN(length, (int)sizeof(line) - 1));
+    close(fd);
 }
 
 // Process-wide: lives until exit, shared by consecutive game sessions.
@@ -105,11 +138,17 @@ static ember::jit::CodeRegion gCodeCache;
     return NSProcessInfo.processInfo.physicalMemory;
 }
 
-+ (BOOL)prepareCodeCacheOfSize:(NSUInteger)bytes useTXMProtocol:(BOOL)useTXMProtocol error:(NSError **)error {
++ (BOOL)prepareCodeCacheOfSize:(NSUInteger)bytes
+                useTXMProtocol:(BOOL)useTXMProtocol
+             debuggerAllocates:(BOOL)debuggerAllocates
+                         error:(NSError **)error {
     using namespace ember::jit;
     @synchronized(self) {
         if (gCodeCache) return YES;
+        setTraceHook(EMTraceLine);
+        setDebuggerAllocates(debuggerAllocates);
         if (!processIsDebugged()) {
+            EMTraceLine("prepare: process is not debugged, stopping");
             return EMFail(error, @"No debugger has attached yet, so iOS will not allow executable memory.");
         }
 
@@ -122,15 +161,44 @@ static ember::jit::CodeRegion gCodeCache;
         // script is always released.
         finishSetup(policy);
         if (!allocated) {
+            EMTraceLine([NSString stringWithFormat:@"prepare: FAILED - %s", reason.c_str()].UTF8String);
             return EMFail(error, [NSString stringWithFormat:@"Could not create the code cache: %s", reason.c_str()]);
         }
         if (!smokeTest(region)) {
             freeRegion(region);
+            EMTraceLine("prepare: FAILED - the code cache did not execute correctly");
             return EMFail(error, @"The code cache was created but did not execute correctly.");
         }
         gCodeCache = region;
+        EMTraceLine("prepare: SUCCESS - JIT memory works");
         return YES;
     }
+}
+
++ (void)trace:(NSString *)message {
+    EMTraceLine(message.UTF8String ?: "");
+}
+
++ (NSURL *)traceURL {
+    return [NSURL fileURLWithFileSystemRepresentation:EMTracePath() isDirectory:NO relativeToURL:nil];
+}
+
++ (NSString *)traceText {
+    NSString *text = [NSString stringWithContentsOfURL:self.traceURL encoding:NSUTF8StringEncoding error:nil] ?: @"";
+    // Keep the screen readable: the most recent part is what matters.
+    const NSUInteger limit = 6000;
+    return text.length > limit ? [text substringFromIndex:text.length - limit] : text;
+}
+
++ (void)clearTrace {
+    [NSFileManager.defaultManager removeItemAtURL:self.traceURL error:nil];
+}
+
++ (NSString *)deviceModel {
+    char model[64] = {};
+    size_t size = sizeof(model) - 1;
+    if (sysctlbyname("hw.machine", model, &size, NULL, 0) != 0) return @"unknown";
+    return @(model);
 }
 
 + (BOOL)isCodeCacheReady {

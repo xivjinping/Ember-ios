@@ -74,6 +74,19 @@ enum ControllerLayout: String, CaseIterable, Identifiable {
     var title: String { self == .duke ? "Duke (Black/White above the face buttons)" : "Controller S (Black/White below)" }
 }
 
+/// Which memory-setup protocol to use once a debugger is attached.
+enum JITProtocol: String, CaseIterable, Identifiable {
+    case automatic, script, plain
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .automatic: return "Automatic (detect TXM)"
+        case .script: return "Always use the JIT script"
+        case .plain: return "Never use the JIT script"
+        }
+    }
+}
+
 enum JITMethod: String, CaseIterable, Identifiable {
     case stikDebug, waitForDebugger
     var id: String { rawValue }
@@ -94,8 +107,10 @@ final class AppSettings: ObservableObject {
     // CPU
     @Published var preferRecompiler: Bool { didSet { defaults.set(preferRecompiler, forKey: "cpu.recompiler") } }
     @Published var jitMethod: JITMethod { didSet { defaults.set(jitMethod.rawValue, forKey: "cpu.jitMethod") } }
-    /// Run the TXM breakpoint protocol even when TXM detection says "absent/unknown".
-    @Published var forceJITScript: Bool { didSet { defaults.set(forceJITScript, forKey: "cpu.forceScript") } }
+    /// Overrides TXM detection, for when it is wrong or cannot tell.
+    @Published var jitProtocol: JITProtocol { didSet { defaults.set(jitProtocol.rawValue, forKey: "cpu.jitProtocol") } }
+    /// With the script: let the debug server allocate the region instead of registering ours.
+    @Published var jitDebuggerAllocates: Bool { didSet { defaults.set(jitDebuggerAllocates, forKey: "cpu.jitDebuggerAllocates") } }
     @Published var codeCacheMB: Int { didSet { defaults.set(codeCacheMB, forKey: "cpu.codeCacheMB") } }
 
     // Memory
@@ -140,7 +155,8 @@ final class AppSettings: ObservableObject {
         ])
         preferRecompiler = defaults.bool(forKey: "cpu.recompiler")
         jitMethod = JITMethod(rawValue: defaults.string(forKey: "cpu.jitMethod") ?? "") ?? .stikDebug
-        forceJITScript = defaults.bool(forKey: "cpu.forceScript")
+        jitProtocol = JITProtocol(rawValue: defaults.string(forKey: "cpu.jitProtocol") ?? "") ?? .automatic
+        jitDebuggerAllocates = defaults.bool(forKey: "cpu.jitDebuggerAllocates")
         codeCacheMB = defaults.integer(forKey: "cpu.codeCacheMB")
         extendedRAM = defaults.bool(forKey: "mem.128")
         renderScale = RenderScale(rawValue: defaults.double(forKey: "gfx.scale")) ?? .hd720

@@ -7,12 +7,14 @@ struct SettingsView: View {
     @EnvironmentObject private var controllers: ControllerManager
     @Environment(\.dismiss) private var dismiss
     @State private var acquiring = false
+    @State private var logRevision = 0
 
     var body: some View {
         NavigationView {
             Form {
                 graphicsSection
                 cpuSection
+                jitLogSection
                 memorySection
                 inputSection
                 Section {
@@ -86,7 +88,10 @@ struct SettingsView: View {
             Picker("JIT method", selection: $settings.jitMethod) {
                 ForEach(JITMethod.allCases) { Text($0.title).tag($0) }
             }
-            Toggle("Force JIT script", isOn: $settings.forceJITScript)
+            Picker("JIT protocol", selection: $settings.jitProtocol) {
+                ForEach(JITProtocol.allCases) { Text($0.title).tag($0) }
+            }
+            Toggle("Let StikDebug allocate the memory", isOn: $settings.jitDebuggerAllocates)
             Stepper("Code cache: \(settings.codeCacheMB) MB", value: $settings.codeCacheMB, in: 32...256, step: 32)
                 .disabled(JITSupport.isCodeCacheReady)
 
@@ -101,10 +106,34 @@ struct SettingsView: View {
             Text("CPU")
         } footer: {
             Text("Without JIT the interpreter is used, which is far too slow for games. "
-                 + "“Force JIT script” runs the iOS 26 protocol even if TXM was not detected. "
+                 + "“JIT protocol” overrides TXM detection if it is wrong. "
                  + (JITSupport.isInsideLiveContainer
                     ? "Running inside LiveContainer: enable “Use LiveContainer’s Bundle ID” there." : ""))
         }
+    }
+
+    // MARK: JIT log
+
+    private var jitLogSection: some View {
+        Section {
+            let log = JITSupport.traceText
+            if log.isEmpty {
+                Text("No JIT attempts recorded yet.").foregroundColor(.secondary)
+            } else {
+                Text(log).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+                Button("Copy Log") { UIPasteboard.general.string = log }
+                Button("Clear Log", role: .destructive) {
+                    JITSupport.clearTrace()
+                    logRevision += 1
+                }
+            }
+        } header: {
+            Text("JIT log")
+        } footer: {
+            Text("Each step is recorded before it runs. If the app closed during a JIT attempt, the last line shows "
+                 + "where. Also saved as Ember › jit-trace.txt in the Files app.")
+        }
+        .id(logRevision)
     }
 
     private var txmText: String {

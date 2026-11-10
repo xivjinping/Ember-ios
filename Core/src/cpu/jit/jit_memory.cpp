@@ -1,5 +1,8 @@
 #include "jit_memory.h"
 
+#include <cerrno>
+#include <cstdarg>
+#include <cstdio>
 #include <cstring>
 
 #include <sys/mman.h>
@@ -16,7 +19,23 @@ namespace ember::jit {
 namespace {
 constexpr size_t kHostPage = 16384; // arm64 iOS page; also a multiple of 4 KiB hosts
 size_t roundUp(size_t v) { return (v + kHostPage - 1) & ~(kHostPage - 1); }
+
+TraceHook gTraceHook = nullptr;
+bool      gDebuggerAllocates = false;
+
+__attribute__((format(printf, 1, 2))) void trace(const char* format, ...) {
+    if (!gTraceHook) return;
+    char line[200];
+    va_list args;
+    va_start(args, format);
+    std::vsnprintf(line, sizeof(line), format, args);
+    va_end(args);
+    gTraceHook(line);
+}
 } // namespace
+
+void setTraceHook(TraceHook hook) { gTraceHook = hook; }
+void setDebuggerAllocates(bool enabled) { gDebuggerAllocates = enabled; }
 
 // ---------------------------------------------------------------------------
 // iOS
@@ -50,13 +69,17 @@ __attribute__((noinline, naked)) void txmDetach() {
 bool remapWritable(uint8_t* rx, size_t size, uint8_t*& rwOut, std::string& error) {
     vm_address_t rw = 0;
     vm_prot_t    cur = 0, max = 0;
+    trace("vm_remap: creating the writable alias of %p", static_cast<void*>(rx));
     kern_return_t kr = vm_remap(mach_task_self(), &rw, size, 0, VM_FLAGS_ANYWHERE, mach_task_self(),
                                 reinterpret_cast<vm_address_t>(rx), FALSE, &cur, &max, VM_INHERIT_NONE);
+    trace("vm_remap: returned %d, alias %p, cur prot %d, max prot %d", kr, reinterpret_cast<void*>(rw), cur, max);
     if (kr != KERN_SUCCESS) {
         error = "vm_remap failed (kern_return " + std::to_string(kr) + ")";
         return false;
     }
+    trace("mprotect: making the alias read-write");
     if (mprotect(reinterpret_cast<void*>(rw), size, PROT_READ | PROT_WRITE) != 0) {
+        trace("mprotect: failed, errno %d", errno);
         error = "mprotect(RW alias) failed";
         vm_deallocate(mach_task_self(), rw, size);
         return false;
@@ -80,17 +103,30 @@ bool allocateRegion(Policy policy, size_t size, CodeRegion& out, std::string& er
         error = "process is not CS_DEBUGGED; attach a JIT enabler first";
         return false;
     }
-    void* rx = mmap(nullptr, size, PROT_READ | PROT_EXEC, MAP_PRIVATE | MAP_ANON, -1, 0);
-    if (rx == MAP_FAILED) {
-        error = "mmap(RX) refused";
-        return false;
+    const bool txm = policy == Policy::TxmUniversal;
+    trace("allocate: %zu bytes, policy %s%s", size, txm ? "TXM script" : "plain dual map",
+          txm && gDebuggerAllocates ? " (debugger allocates)" : "");
+
+    void* rx = nullptr;
+    if (!(txm && gDebuggerAllocates)) {
+        trace("mmap: requesting an RX region");
+        rx = mmap(nullptr, size, PROT_READ | PROT_EXEC, MAP_PRIVATE | MAP_ANON, -1, 0);
+        if (rx == MAP_FAILED) {
+            trace("mmap: refused, errno %d", errno);
+            error = "mmap(RX) refused";
+            return false;
+        }
+        trace("mmap: got %p", rx);
     }
-    if (policy == Policy::TxmUniversal) {
-        // The script registers the range with the Trusted Execution Monitor.
-        // It returns the usable RX address (normally the one we passed).
+    if (txm) {
+        // The script registers the range with the Trusted Execution Monitor
+        // and returns the usable RX address. If the app dies on the next line,
+        // no script was listening for the breakpoint.
+        trace("brk: asking the debugger script to prepare %p", rx);
         void* prepared = txmPrepareRegion(rx, size);
+        trace("brk: script returned %p", prepared);
         if (!prepared) {
-            munmap(rx, size);
+            if (rx) munmap(rx, size);
             error = "debugger script did not prepare the region";
             return false;
         }
@@ -102,11 +138,15 @@ bool allocateRegion(Policy policy, size_t size, CodeRegion& out, std::string& er
         return false;
     }
     out = CodeRegion{static_cast<uint8_t*>(rx), rw, size};
+    trace("allocate: done, rx %p rw %p", rx, static_cast<void*>(rw));
     return true;
 }
 
 void finishSetup(Policy policy) {
-    if (policy == Policy::TxmUniversal) txmDetach();
+    if (policy != Policy::TxmUniversal) return;
+    trace("brk: telling the debugger script to detach");
+    txmDetach();
+    trace("brk: detach returned");
 }
 
 void freeRegion(CodeRegion& r) {
@@ -186,10 +226,20 @@ bool smokeTest(const CodeRegion& region) {
     return false;
 #endif
     if (region.size < sizeof(code)) return false;
+    trace("smoke test: writing %zu bytes through the RW alias", sizeof(code));
     std::memcpy(region.rw, code, sizeof(code));
+    trace("smoke test: checking the bytes are visible through the RX view");
+    const bool visible = std::memcmp(region.rx, code, sizeof(code)) == 0;
+    trace("smoke test: RX view %s", visible ? "matches" : "DOES NOT match (the two views are not the same memory)");
+    if (!visible) return false;
     flushInstructionCache(region.rx, sizeof(code));
+    // If the app dies on the next line, the pages are mapped but iOS refused
+    // to execute them: the region was not registered the way this OS expects.
+    trace("smoke test: executing generated code at %p", static_cast<void*>(region.rx));
     auto fn = reinterpret_cast<int (*)()>(region.rx);
-    return fn() == 42;
+    const int result = fn();
+    trace("smoke test: code returned %d (expected 42)", result);
+    return result == 42;
 }
 
 } // namespace ember::jit

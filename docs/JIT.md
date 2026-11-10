@@ -68,7 +68,7 @@ and `Core/src/cpu/jit/jit_memory.cpp`.
 2. **Classify the device.** `EMJITSupport.txmStatus` reports whether the
    Trusted Execution Monitor is present (iOS 26+ on newer chips). This picks
    between the two allocation policies in step 5. If it cannot tell, the app
-   refuses to guess and asks the user to set *Force JIT script*.
+   refuses to guess and asks the user to choose a *JIT protocol* in Settings.
 3. **Get a debugger attached.** One of:
    - *StikDebug (on device).* The app opens
      `stikdebug://enable-jit?bundle-id=<id>&pid=<pid>` and, when TXM is

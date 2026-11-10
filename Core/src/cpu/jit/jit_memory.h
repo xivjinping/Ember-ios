@@ -33,6 +33,18 @@ struct CodeRegion {
     explicit operator bool() const { return rx && rw && size; }
 };
 
+// Diagnostics. JIT setup fails by killing the process, not by returning an
+// error, so each step is reported *before* it runs; the platform layer writes
+// these to disk, and the last line left behind names the step that died.
+using TraceHook = void (*)(const char* message);
+void setTraceHook(TraceHook hook);
+
+// TxmUniversal only. false (default): this process maps the RX region and
+// asks the debugger script to register it. true: pass NULL and let the debug
+// server allocate the region. Both are valid per the protocol; which one a
+// given iOS release accepts is something to find out on the device.
+void setDebuggerAllocates(bool enabled);
+
 // True once a debugger has attached to this process at least once
 // (csops CS_OPS_STATUS & CS_DEBUGGED). Always true for HostDualMap builds.
 bool processIsDebugged();

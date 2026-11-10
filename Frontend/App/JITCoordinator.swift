@@ -40,8 +40,26 @@ final class JITCoordinator: ObservableObject {
         }
     }
 
-    func usesTXMProtocol(_ settings: AppSettings) -> Bool {
-        settings.forceJITScript || JITSupport.txmStatus == .present
+    /// nil when the setting is Automatic and detection could not tell.
+    func usesTXMProtocol(_ settings: AppSettings) -> Bool? {
+        switch settings.jitProtocol {
+        case .script: return true
+        case .plain: return false
+        case .automatic:
+            switch JITSupport.txmStatus {
+            case .present: return true
+            case .absent: return false
+            default: return nil
+            }
+        }
+    }
+
+    private static func describe(_ status: TXMStatus) -> String {
+        switch status {
+        case .present: return "present"
+        case .absent: return "absent"
+        default: return "unknown"
+        }
     }
 
     /// Returns true once the process-wide code cache exists. Safe to call
@@ -51,16 +69,27 @@ final class JITCoordinator: ObservableObject {
             state = .ready
             return true
         }
+        // Everything from here on is written to the trace file first, so a
+        // crash leaves a record of how far it got (Settings > JIT log).
+        let version = UIDevice.current.systemVersion
+        JITSupport.trace("=== JIT attempt: \(JITSupport.deviceModel), iOS \(version), "
+                         + "bundle \(Bundle.main.bundleIdentifier ?? "?"), pid \(getpid())")
+        JITSupport.trace("get-task-allow \(JITSupport.hasGetTaskAllow ? "yes" : "NO"), "
+                         + "TXM detected: \(Self.describe(JITSupport.txmStatus)), protocol setting: \(settings.jitProtocol.rawValue), "
+                         + "debugger allocates: \(settings.jitDebuggerAllocates), method: \(settings.jitMethod.rawValue), "
+                         + "already debugged: \(JITSupport.isDebugged)")
+
         guard JITSupport.hasGetTaskAllow else {
             state = .unavailable("This install lacks get-task-allow. Re-sign with a development profile.")
+            JITSupport.trace("stopping: no get-task-allow")
             return false
         }
 
-        let txm = usesTXMProtocol(settings)
-        if JITSupport.txmStatus == .unknown && !settings.forceJITScript {
+        guard let txm = usesTXMProtocol(settings) else {
             // Guessing wrong either crashes (brk with nobody listening) or yields
             // pages that die on first execution, so make the user decide.
-            state = .failed("Could not tell whether this device has TXM. Set “Force JIT script” in Settings.")
+            state = .failed("Could not tell whether this device has TXM. Choose a JIT protocol in Settings.")
+            JITSupport.trace("stopping: TXM unknown and protocol is Automatic")
             return false
         }
 
@@ -71,19 +100,22 @@ final class JITCoordinator: ObservableObject {
             while !JITSupport.isDebugged {
                 if Date() > deadline || Task.isCancelled {
                     state = .failed("No debugger attached within \(Int(timeout)) s.")
+                    JITSupport.trace("stopping: no debugger attached within \(Int(timeout)) s")
                     return false
                 }
                 try? await Task.sleep(nanoseconds: 200_000_000)
             }
+            JITSupport.trace("debugger attached (CS_DEBUGGED is set)")
         }
         // If the process was already debugged on entry (the usual "launch with
         // JIT" flow), the enabler's script is attached and waiting for us.
 
         state = .preparing
         let bytes = UInt(settings.codeCacheMB * 1_048_576)
+        let debuggerAllocates = settings.jitDebuggerAllocates
         let failure: String? = await Task.detached(priority: .userInitiated) {
             do {
-                try JITSupport.prepareCodeCache(bytes: bytes, useTXMProtocol: txm)
+                try JITSupport.prepareCodeCache(bytes: bytes, useTXMProtocol: txm, debuggerAllocates: debuggerAllocates)
                 return nil
             } catch {
                 return error.localizedDescription
@@ -111,8 +143,11 @@ final class JITCoordinator: ObservableObject {
             components.queryItems?.append(URLQueryItem(name: "script-name", value: Self.scriptName))
         }
         guard let url = components.url else { return }
+        JITSupport.trace("opening \(url.absoluteString)")
         // Success here only means iOS delivered the URL. Readiness is decided
         // by CS_DEBUGGED and the allocator, never by this call.
-        UIApplication.shared.open(url)
+        UIApplication.shared.open(url) { delivered in
+            JITSupport.trace(delivered ? "StikDebug link delivered" : "StikDebug link NOT delivered (is StikDebug installed?)")
+        }
     }
 }

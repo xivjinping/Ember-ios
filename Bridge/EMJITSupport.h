@@ -44,10 +44,27 @@ NS_SWIFT_NAME(JITSupport)
 /// Call off the main thread, only when `isDebugged` is YES, and with the TXM
 /// protocol only while the enabler's script is attached. Returns YES
 /// immediately if the cache already exists.
+///
+/// `debuggerAllocates` (TXM protocol only) lets the debug server allocate the
+/// region instead of registering one this process mapped.
 + (BOOL)prepareCodeCacheOfSize:(NSUInteger)bytes
                 useTXMProtocol:(BOOL)useTXMProtocol
+             debuggerAllocates:(BOOL)debuggerAllocates
                          error:(NSError **)error
-    NS_SWIFT_NAME(prepareCodeCache(bytes:useTXMProtocol:));
+    NS_SWIFT_NAME(prepareCodeCache(bytes:useTXMProtocol:debuggerAllocates:));
+
+// MARK: Diagnostics
+
+/// JIT setup tends to fail by killing the app, so every step is written to
+/// Documents/Ember/jit-trace.txt *before* it runs. After a crash, the last
+/// line names the step that died. The file is also visible in the Files app.
++ (void)trace:(NSString *)message NS_SWIFT_NAME(trace(_:));
+@property (class, nonatomic, readonly, copy) NSString *traceText;
+@property (class, nonatomic, readonly) NSURL *traceURL;
++ (void)clearTrace;
+
+/// Hardware identifier, e.g. "iPad14,8".
+@property (class, nonatomic, readonly, copy) NSString *deviceModel;
 
 @property (class, nonatomic, readonly) BOOL isCodeCacheReady;
 
