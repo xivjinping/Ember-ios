@@ -2,7 +2,7 @@
 
 Read this first when picking the project up in a new session. It says where
 things stand, what comes next, and how the build rounds work. Last updated
-2026-11-10 (after step 4: xemu linked into the app).
+2026-11-10 (step 5 built; first start on the device pending).
 
 ## Goal
 
@@ -23,15 +23,17 @@ this app (Ember). `docs/ARCHITECTURE.md` explains the design and why xemu;
 | DSP56300 (Rust) | Built from source for `aarch64-apple-ios` by `Dependencies/xemu/build-dsp56300-ios.sh` (cached); xemu's own download is macOS-only |
 | xemu as libraries | `package-xemu-ios.sh` repacks the link inputs as `libember-xemu-core.a` (force-loaded) and `libember-xemu-deps.a`, writes `ember-xemu.xcconfig`, test-links them. About 46 MB together |
 | App linked with xemu | **Builds** (16 MB binary, was 1.4 MB). `Core/src/backend/xemu_backend.cpp` implements `core_api.h`; backend name is `xemu`. **Confirmed on the iPad (2026-11-10):** launches, shows the xemu status line, and finds the boot ROM (`mcpx_1.0.bin`), BIOS (`Complex_4627.bin`, 1 MB) and hard disk (`xbox_hdd.qcow2`) in `Documents/Ember/System` |
-| Starting the machine | **Deliberately blocked** in `xemu_backend.cpp` (`kCodeGeneratorReady = false`) until step 5; QEMU would otherwise fail to allocate code memory and end the app |
+| Code generator on Ember's JIT region | **Built, not yet run on the device.** `tcg/region.c` is patched to take its buffer from `tcg_ember_set_code_buffer()` (called through `ember_xemu_set_code_buffer` from `em_core_set_jit_region`): split-wx, no mmap/mprotect/guard pages |
+| Coroutines on iOS | `Dependencies/xemu/ember/coroutine-ember.c` replaces the sigaltstack backend (sigaltstack fails silently on iOS). Control flow tested on Linux with an x86 twin of the stack switch; the arm64 version is untested until the device runs it |
+| Starting the machine | **Enabled.** Needs the JIT region; otherwise the status line says to enable JIT |
 
-The app links xemu but does not start it yet. Starting a game shows a status
-line: which system files are missing, or that they were found.
+The app links xemu and tries to start it. The status line shows which system
+files are missing, that JIT is needed, or "Console running. CPU at 0x…".
 
 ## How the xemu side is put together
 
 xemu is fetched at the revision in `Dependencies/xemu/XEMU_COMMIT`, changed
-by `Dependencies/xemu/patch_xemu.py` (25 edits, each asserts the text it
+by `Dependencies/xemu/patch_xemu.py` (29 edits, each asserts the text it
 replaces, plus copies of the files in `Dependencies/xemu/ember/` into xemu's
 `ui/`), configured by `configure-xemu-ios.sh`, compiled and linked by
 `compile-xemu-ios.sh` (prints a grouped error summary) and packaged by
@@ -77,17 +79,25 @@ Things to know:
    needed.
 4. ~~Static library, linked into the app, `core_api.h` on top.~~ Done in CI.
    Confirmed on the device: the app launches and the system files are found.
-5. **Point QEMU's code generator at Ember's JIT region.** TCG has a
-   split-wx mode with a `vm_remap` path in `tcg/region.c`; on iOS the RX
-   region must come from the debugger-script protocol
-   (`Core/src/cpu/jit/jit_memory.cpp`), all of it allocated before the
-   script detaches. `em_core_set_jit_region` in `xemu_backend.cpp` receives
-   the region and currently only remembers that it exists; pass it through
-   `ember-xemu.h` (and `extra_args`, e.g. `-accel tcg,split-wx=on,tb-size=N`).
-   Then set `kCodeGeneratorReady = true`.
-6. **Try to start the BIOS on the device.** The owner supplies the MCPX boot
-   ROM, a BIOS image and a hard-disk image in `Documents/Ember/System`. Ask
-   for `xemu-log.txt` after each attempt.
+5. ~~Point QEMU's code generator at Ember's JIT region.~~ Built. Whether it
+   works is exactly what step 6 finds out.
+6. **Start the BIOS on the device. Waiting on the owner's first attempt.**
+   Procedure: Enable JIT in the library, start a game, wait half a minute,
+   then send a screenshot of the status line and `Ember/xemu-log.txt` (and
+   Settings > JIT log if the app died). What to look for:
+   - `ember: starting xemu; code buffer from Ember's JIT region` must be the
+     first line; `ember: machine built, entering the main loop` means
+     `qemu_init` survived (block layer, coroutines, SDL audio, devices).
+   - The status line's CPU address should keep changing. `0xFFFFxxxx` is the
+     boot ROM/BIOS, `0x8001xxxx` and up is the kernel.
+   - `-d cpu_reset` is on: repeated "CPU Reset" dumps mean a reset loop.
+   - If the log ends before "machine built" the last lines name what
+     `qemu_init` rejected (it calls `exit`, so the app just closes).
+   Likely trouble, in rough order: the arm64 coroutine switch; SDL audio
+   opening next to the app's own AVAudioEngine; something in TCG touching
+   the region's protection that the patch missed.
+7. After the BIOS runs: a renderer (Metal) for nv2a, audio through the app,
+   and creating the hard-disk image automatically.
 
 ## How a build round works
 
