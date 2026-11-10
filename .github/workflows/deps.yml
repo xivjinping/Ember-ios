@@ -5,6 +5,7 @@ name: iOS dependencies
 #
 #   1. Cross-compile the third-party libraries for iOS arm64 (cached).
 #   2. Fetch the pinned xemu revision, apply Ember's iOS changes, configure it.
+#   3. Compile it and summarise the errors.
 
 on:
   workflow_dispatch:
@@ -58,6 +59,16 @@ jobs:
 
       - name: Configure xemu for iOS
         run: Dependencies/xemu/configure-xemu-ios.sh
+
+      - name: Compile xemu for iOS
+        run: Dependencies/xemu/compile-xemu-ios.sh
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xemu-compile-log
+          path: build-deps/xemu-compile.log
+          if-no-files-found: ignore
 
       - name: Show xemu configure logs on failure
         if: failure()
