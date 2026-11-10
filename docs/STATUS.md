@@ -2,7 +2,7 @@
 
 Read this first when picking the project up in a new session. It says where
 things stand, what comes next, and how the build rounds work. Last updated
-2026-11-10.
+2026-11-10 (after the link step).
 
 ## Goal
 
@@ -18,43 +18,42 @@ this app (Ember). `docs/ARCHITECTURE.md` explains the design and why xemu;
 | JIT memory on a real device | **Verified** on iPad Air M2 (`iPad14,8`), iPadOS 27.0.1, StikDebug + `universal.js`, started from the app's Enable JIT button. See `docs/JIT.md` §8 |
 | iOS libraries | GLib 2.88.4, pixman 0.44.2, libsamplerate 0.2.2 and SDL3 (xemu's pinned revision) build for iOS arm64 |
 | xemu configure for iOS | Passes |
-| xemu compile for iOS | **1,677 of 1,679 steps compile.** Two files fail |
+| xemu compile for iOS | **All 1,687 steps compile** |
+| xemu link for iOS | **Everything resolves except `_main`**, which is expected: xemu's `main` lives in `ui/xemu.c`, which is excluded. Step 4 turns the target into a library |
+| DSP56300 (Rust) | Built from source for `aarch64-apple-ios` by `Dependencies/xemu/build-dsp56300-ios.sh` (cached); xemu's own download is macOS-only |
+| Front-end replacements | `Dependencies/xemu/ember/ember-frontend.c`: controller ports, notifications, snapshot hooks, pcap stub |
 
 The app still runs the stub backend. No xemu code is in the app yet.
 
 ## Where stage 3 stands
 
 xemu is fetched at the revision in `Dependencies/xemu/XEMU_COMMIT`, changed
-by `Dependencies/xemu/patch_xemu.py` (17 edits so far, each one asserts the
-text it replaces), configured by `configure-xemu-ios.sh` and compiled by
-`compile-xemu-ios.sh`, which prints a grouped error summary.
+by `Dependencies/xemu/patch_xemu.py` (23 edits, each asserts the text it
+replaces, plus a copy of `ember/ember-frontend.c` into `ui/`), configured by
+`configure-xemu-ios.sh` and compiled by `compile-xemu-ios.sh`, which prints a
+grouped error summary. Steps 1 to 3 below are done: the last two files
+compile, and the link finds every symbol except `_main`.
 
-The two files that still fail, both with `'epoxy/gl.h' file not found`:
-
-- `hw/xbox/nv2a/pgraph/null/renderer.c` (via `null/renderer.h`)
-- `migration/savevm.c` (via `ui/xemu-snapshots.h`, which uses `GLuint`)
+`ember-frontend.c` exposes `ember_input_set(port, buttons, axes)` and
+`ember_input_get_rumble(port, &l, &r)` for the app to feed the emulated
+gamepads. Notifications only go to the log for now, and snapshots store plain
+machine state without xemu's thumbnail header.
 
 ## Next steps, in order
 
-1. **Fix the last two files.** Give them the few GL type definitions they
-   need without real OpenGL (a small shim header on the include path, or
-   edits in `patch_xemu.py`). Note that even xemu's *null* renderer is
-   written against SDL and the offscreen-GL helper, which is left out on
-   iOS; expect to patch the renderer itself, not just its header.
-2. **Link.** The compile step builds the `qemu-system-i386` target, so once
-   everything compiles the linker runs. xemu's desktop front end
-   (`ui/xemu*.c`, `ui/xui/`, ImGui) is excluded on iOS, so expect a list of
-   undefined symbols for whatever the core still calls: settings
-   (`g_config`), controller state (`xemu-input`), display, snapshots,
-   notifications. `compile-xemu-ios.sh` already prints linker output.
-   Also check that `libffi.a` and the libintl stub are in the prefix: GLib
-   built them as subprojects and they did not appear in the installed list.
-3. **Write Ember's replacements** for those symbols (a new source directory
-   added through `patch_xemu.py` or a separate static library).
+1. ~~Fix the last two files.~~ Done.
+2. ~~Link.~~ Done apart from `_main` (see step 4).
+3. ~~Ember's replacements for the missing symbols.~~ Done for the nine the
+   link needed. More will turn up once the core runs (settings paths, the
+   display hand-off to Metal, audio).
 4. **Produce a static library** instead of an executable, link it into the
    app in place of `Core/src/backend/stub_backend.cpp`, and implement
-   `Core/include/ember/core_api.h` on top of it. QEMU's `main` must become a
-   function the app calls on a background thread.
+   `Core/include/ember/core_api.h` on top of it. QEMU's `main` (xemu's is in
+   `ui/xemu.c`; QEMU's generic one is `system/main.c`) must become a function
+   the app calls on a background thread. Expect to bundle `libdsp56300_emu_ffi.a`
+   and the QEMU/xemu archives into one library, and to need the font/ROM data
+   and any `-force_load` archives from the current link command (printed in
+   the log).
 5. **Point QEMU's code generator at Ember's JIT region.** TCG has a
    split-wx mode with a `vm_remap` path in `tcg/region.c`; on iOS the RX
    region must come from the debugger-script protocol
@@ -96,6 +95,6 @@ The two files that still fail, both with `'epoxy/gl.h' file not found`:
 - Never commit the MCPX boot ROM, BIOS images, hard-disk images, EEPROM
   dumps or games. `.gitignore` blocks the usual extensions.
 - xemu and QEMU are GPL-2.0. Once their code is linked in, the whole app is
-  GPL; the repository still needs a LICENSE file.
+  GPL. `LICENSE` (GPL-2.0) is already in the repository.
 - The app icon is original artwork (`scripts/make_icon.py`). Do not use
   console makers' logos or names in the app's branding.
