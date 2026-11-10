@@ -20,6 +20,7 @@
 #include "qobject/qdict.h"
 #include "monitor/qdev.h"
 #include "hw/qdev-core.h"
+#include "hw/core/cpu.h"
 #include "block/aio.h"
 #include "system/system.h"
 #include "system/runstate.h"
@@ -181,13 +182,47 @@ static void ember_register_display(void)
 
 type_init(ember_register_display);
 
+/* ---- Code generator memory and progress ------------------------------------------------ */
+
+/* Added to tcg/region.c by patch_xemu.py. */
+void tcg_ember_set_code_buffer(void *rx, void *rw, size_t size);
+
+static bool ember_have_code_buffer;
+
+void ember_xemu_set_code_buffer(void *rx, void *rw, size_t size)
+{
+    if (ember_xemu_state() == EMBER_XEMU_IDLE && rx && rw && size) {
+        tcg_ember_set_code_buffer(rx, rw, size);
+        ember_have_code_buffer = true;
+    }
+}
+
+uint64_t ember_xemu_guest_pc(void)
+{
+    if (ember_xemu_state() != EMBER_XEMU_RUNNING) {
+        return 0;
+    }
+    /* Read without stopping the CPU: possibly a little stale, never unsafe. */
+    CPUState *cpu = first_cpu;
+    if (!cpu) {
+        return 0;
+    }
+    CPUClass *cc = CPU_GET_CLASS(cpu);
+    return cc->get_pc ? cc->get_pc(cpu) : 0;
+}
+
+/* SDL refuses to start on iOS until told the app's main() has run. */
+void SDL_SetMainReady(void);
+
 /* ---- Machine thread ------------------------------------------------------------------ */
 
 static void *ember_machine_thread(void *opaque)
 {
     qemu_init(ember_argc, ember_argv);
+    fprintf(stderr, "ember: machine built, entering the main loop\n");
     qatomic_set(&ember_state, EMBER_XEMU_RUNNING);
     int status = qemu_main_loop();
+    fprintf(stderr, "ember: main loop returned %d\n", status);
     qemu_cleanup(status);
     qatomic_set(&ember_state, EMBER_XEMU_EXITED);
     return NULL;
@@ -201,11 +236,15 @@ bool ember_xemu_start(const ember_xemu_config *c)
         return false;
     }
     setlocale(LC_NUMERIC, "C");
+    SDL_SetMainReady();
+    fprintf(stderr, "ember: starting xemu; code buffer %s\n",
+            ember_have_code_buffer ? "from Ember's JIT region" : "NOT SET (QEMU will try to allocate its own)");
 
     /* xemu's vl.c builds the machine's arguments from these settings. */
     xemu_settings_set_path(c->settings_path);
     xemu_settings_load();
     g_config.general.show_welcome = false;
+    g_config.display.renderer = CONFIG_DISPLAY_RENDERER_NULL; /* the only one built for iOS so far */
     g_config.sys.mem_limit = c->ram_mb >= 128 ? CONFIG_SYS_MEM_LIMIT_128 : CONFIG_SYS_MEM_LIMIT_64;
     xemu_settings_set_string(&g_config.sys.files.bootrom_path, c->bootrom_path);
     xemu_settings_set_string(&g_config.sys.files.flashrom_path, c->flashrom_path);

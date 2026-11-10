@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
@@ -32,11 +33,6 @@
 namespace fs = std::filesystem;
 
 namespace {
-
-// QEMU's code generator still allocates its own executable memory, which iOS
-// refuses. Until it is pointed at Ember's JIT region (docs/STATUS.md, step 5)
-// starting the machine would end the app, so start stops after its checks.
-constexpr bool kCodeGeneratorReady = false;
 
 struct SystemFiles {
     std::string bootRom, bios, hdd;
@@ -132,6 +128,12 @@ struct em_core {
 
     std::atomic<bool> jitAttached{false};
 
+    // For the statistics: what the last locked frame looked like.
+    std::atomic<uint64_t> frameSerial{0};
+    std::atomic<uint32_t> frameWidth{EM_NATIVE_WIDTH}, frameHeight{EM_NATIVE_HEIGHT};
+    uint64_t                              statsSerial = 0;
+    std::chrono::steady_clock::time_point statsTime = std::chrono::steady_clock::now();
+
     void setStatus(std::string text) {
         std::lock_guard<std::mutex> lock(statusMutex);
         status = std::move(text);
@@ -185,12 +187,10 @@ void em_core_start(em_core* core) {
         core->setStatus("Put these in Files > Ember > Ember > System: " + missing);
         return;
     }
-    if (!kCodeGeneratorReady) {
-        core->setStatus("xemu core linked, system files found. Starting the console comes with the next build (JIT hookup).");
-        return;
-    }
+    // QEMU has no interpreter for this: without executable memory it would
+    // fail inside qemu_init and end the app.
     if (!core->jitAttached.load()) {
-        core->setStatus("JIT is off. Enable JIT in the library screen first; the console cannot run without it.");
+        core->setStatus("JIT is not active. Close the game, tap Enable JIT in the library (and keep Recompiler on in Settings), then start again.");
         return;
     }
 
@@ -215,6 +215,10 @@ void em_core_start(em_core* core) {
     cfg.eeprom_path = eeprom.c_str();
     cfg.ram_mb = int(core->config.ram_mb);
     cfg.controllers = 1;
+    // Print the CPU state whenever the guest resets: a boot that goes wrong
+    // usually shows up as a reset loop.
+    static const char* const extraArgs[] = {"-d", "cpu_reset", nullptr};
+    cfg.extra_args = extraArgs;
     if (ember_xemu_start(&cfg)) {
         core->setStatus("Console starting. Log: Ember/xemu-log.txt");
     } else {
@@ -231,8 +235,10 @@ void em_core_stop(em_core* core) {
 }
 
 void em_core_set_jit_region(em_core* core, void* rx, void* rw, size_t size) {
-    // Step 5 hands this region to QEMU's code generator.
-    if (core) core->jitAttached.store(rx && rw && size);
+    // QEMU's code generator writes through rw and the CPU runs from rx.
+    if (!core) return;
+    ember_xemu_set_code_buffer(rx, rw, size);
+    core->jitAttached.store(rx && rw && size);
 }
 
 void em_core_set_render_scale(em_core*, float) {
@@ -247,6 +253,9 @@ bool em_core_lock_frame(em_core* core, const uint8_t** bgra, uint32_t* width, ui
     if (ember_xemu_lock_frame(&pixels, &w, &h, &s)) {
         core->lockedMachineFrame = true;
         s += 1; // the blank frame below is serial 1
+        core->frameSerial.store(s);
+        core->frameWidth.store(w);
+        core->frameHeight.store(h);
     } else {
         core->blankMutex.lock();
         core->lockedMachineFrame = false;
@@ -286,14 +295,36 @@ void em_core_get_stats(em_core* core, em_stats* out) {
     if (!core || !out) return;
     std::memset(out, 0, sizeof(*out));
     out->ram_mb = core->config.ram_mb;
-    out->frame_width = EM_NATIVE_WIDTH;
-    out->frame_height = EM_NATIVE_HEIGHT;
+    out->frame_width = core->frameWidth.load();
+    out->frame_height = core->frameHeight.load();
+
+    // Frames the machine produced since the last call (about once a second).
+    const auto now = std::chrono::steady_clock::now();
+    const uint64_t serial = core->frameSerial.load();
+    const double seconds = std::chrono::duration<double>(now - core->statsTime).count();
+    if (seconds > 0.2) {
+        out->fps = double(serial - core->statsSerial) / seconds;
+        core->statsSerial = serial;
+        core->statsTime = now;
+    }
+
     const int state = ember_xemu_state();
     out->recompiler_active = state == EMBER_XEMU_RUNNING;
     std::lock_guard<std::mutex> lock(core->statusMutex);
-    if (state == EMBER_XEMU_EXITED) {
+    switch (state) {
+    case EMBER_XEMU_STARTING:
+        std::snprintf(out->status, sizeof(out->status), "Building the console... (log: Ember/xemu-log.txt)");
+        break;
+    case EMBER_XEMU_RUNNING:
+        // There is no renderer yet, so the picture stays black; the changing
+        // address shows the guest CPU is executing.
+        std::snprintf(out->status, sizeof(out->status), "Console running. CPU at 0x%08llX. No picture yet (no renderer).",
+                      static_cast<unsigned long long>(ember_xemu_guest_pc()));
+        break;
+    case EMBER_XEMU_EXITED:
         std::snprintf(out->status, sizeof(out->status), "The console has shut down. Log: Ember/xemu-log.txt");
-    } else {
+        break;
+    default:
         std::snprintf(out->status, sizeof(out->status), "%s", core->status.c_str());
     }
 }

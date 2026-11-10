@@ -188,6 +188,7 @@ edit("meson.build",
 import shutil
 for name in ("ember-frontend.c", "ember-core.c", "ember-xemu.h", "ember-exe-main.c"):
     shutil.copy(Path(__file__).parent / "ember" / name, root / "ui" / name)
+shutil.copy(Path(__file__).parent / "ember" / "coroutine-ember.c", root / "util" / "coroutine-ember.c")
 edit("ui/meson.build",
      "                      'xemu-widescreen.c'),\n",
      "                      'xemu-widescreen.c', 'ember-frontend.c', 'ember-core.c'),\n")
@@ -203,5 +204,65 @@ edit("meson.build",
      "  slirp = dependency('slirp', required: get_option('slirp'),\n",
      "  slirp = dependency('slirp', required: get_option('slirp'),\n"
      "                     default_options: ['default_library=static'],\n")
+
+# --- 9. Coroutines on iOS ------------------------------------------------------------------
+# sigaltstack() fails silently on iOS and there is no ucontext, so neither
+# stock backend works. See ember/coroutine-ember.c.
+edit("util/meson.build",
+     "  util_ss.add(files(f'coroutine-@coroutine_backend@.c'))",
+     "  if host_ios\n"
+     "    util_ss.add(files('coroutine-ember.c'))\n"
+     "  else\n"
+     "    util_ss.add(files(f'coroutine-@coroutine_backend@.c'))\n"
+     "  endif")
+
+# --- 10. The code generator writes into Ember's JIT region ------------------------------------
+# iOS gives a sideloaded app executable memory only through the debugger
+# protocol in docs/JIT.md, and only before the debugger detaches. The app
+# allocates one region that way (an executable view and a writable view of
+# the same pages) and passes it in; TCG then uses it as a split-wx buffer
+# of exactly that size instead of mapping its own.
+edit("tcg/region.c",
+     "static int alloc_code_gen_buffer(size_t size, int splitwx, Error **errp)\n"
+     "{\n"
+     "    ERRP_GUARD();\n"
+     "    int prot, flags;\n",
+     "static void *ember_code_rx, *ember_code_rw;\n"
+     "static size_t ember_code_size;\n"
+     "\n"
+     "void tcg_ember_set_code_buffer(void *rx, void *rw, size_t size);\n"
+     "void tcg_ember_set_code_buffer(void *rx, void *rw, size_t size)\n"
+     "{\n"
+     "    ember_code_rx = rx;\n"
+     "    ember_code_rw = rw;\n"
+     "    ember_code_size = size;\n"
+     "}\n"
+     "\n"
+     "static int alloc_code_gen_buffer(size_t size, int splitwx, Error **errp)\n"
+     "{\n"
+     "    ERRP_GUARD();\n"
+     "    int prot, flags;\n"
+     "\n"
+     "    if (ember_code_size) {\n"
+     "        region.start_aligned = ember_code_rw;\n"
+     "        region.total_size = ember_code_size;\n"
+     "        tcg_splitwx_diff = (char *)ember_code_rx - (char *)ember_code_rw;\n"
+     "        return PROT_READ | PROT_WRITE;\n"
+     "    }\n")
+edit("tcg/region.c",
+     "    /* Size the buffer.  */\n    if (tb_size == 0) {",
+     "    /* Ember: the buffer is the size of the region the app prepared. */\n"
+     "    if (ember_code_size) {\n"
+     "        tb_size = ember_code_size;\n"
+     "    }\n"
+     "\n"
+     "    /* Size the buffer.  */\n    if (tb_size == 0) {")
+# Guard pages would change the protection of pages inside the prepared
+# region; they are optional, so leave the region as it was handed over.
+edit("tcg/region.c",
+     "        if (have_prot != 0) {\n"
+     "            /* Guard pages are nice for bug detection but are not essential. */",
+     "        if (have_prot != 0 && !ember_code_size) {\n"
+     "            /* Guard pages are nice for bug detection but are not essential. */")
 
 print(f"patch_xemu: {applied} edits applied")

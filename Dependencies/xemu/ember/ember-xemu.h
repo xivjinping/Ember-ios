@@ -9,6 +9,7 @@
 #define EMBER_XEMU_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -41,6 +42,20 @@ enum {
  * the caller checks the files first.
  */
 bool ember_xemu_start(const ember_xemu_config *config);
+
+/*
+ * Gives QEMU's code generator the memory it writes machine code into: two
+ * views of the same pages, `rx` executable and `rw` writable (Ember's JIT
+ * region, docs/JIT.md). Must be called before ember_xemu_start; iOS allows
+ * no other way to get executable memory, so without it the start fails.
+ */
+void ember_xemu_set_code_buffer(void *rx, void *rw, size_t size);
+
+/*
+ * Where the guest CPU was last seen executing (linear address), or 0 when
+ * the machine is not running. A cheap sign of life while there is no picture.
+ */
+uint64_t ember_xemu_guest_pc(void);
 int ember_xemu_state(void);
 void ember_xemu_set_paused(bool paused);
 void ember_xemu_request_stop(void);
