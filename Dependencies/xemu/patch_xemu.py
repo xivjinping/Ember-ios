@@ -70,4 +70,23 @@ edit("ui/meson.build",
      "elif host_os == 'darwin'\n  xemu_ss.add(files('xemu-os-utils-macos.m'))",
      "elif host_os == 'darwin' and not host_ios\n  xemu_ss.add(files('xemu-os-utils-macos.m'))")
 
+# --- 5. No desktop UI toolkit on iOS -------------------------------------------------
+# xemu's menus and overlays are drawn with Dear ImGui on SDL and OpenGL.
+# Ember's SwiftUI front end replaces all of it, so the toolkit is not built.
+edit("meson.build",
+     "imgui_proj = subproject('imgui', required: true,",
+     "if host_ios\n  imgui = not_found\n  implot = not_found\nelse\n"
+     "imgui_proj = subproject('imgui', required: true,")
+edit("meson.build",
+     "implot = implot_proj.get_variable('implot_dep')\n",
+     "implot = implot_proj.get_variable('implot_dep')\nendif\n")
+edit("ui/meson.build",
+     "subdir('xui')\n",
+     "if not host_ios\n  subdir('xui')\nendif\n")
+# The desktop front end (window, menus, SDL input, settings UI) stays out of
+# the iOS build. What the core still needs from it is supplied by Ember.
+edit("ui/meson.build",
+     "system_ss.add_all(xemu_ss)",
+     "if not host_ios\n  system_ss.add_all(xemu_ss)\nendif")
+
 print(f"patch_xemu: {applied} edits applied")
