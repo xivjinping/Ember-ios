@@ -5,6 +5,7 @@
 
 #import <TargetConditionals.h>
 #import <fcntl.h>
+#import <mach/machine.h>
 #import <os/proc.h>
 #import <sys/sysctl.h>
 #import <sys/time.h>
@@ -37,6 +38,21 @@ static BOOL EMFail(NSError **error, NSString *message) {
                                  userInfo:@{NSLocalizedDescriptionKey : message}];
     }
     return NO;
+}
+
+// TXM by chip family, for when the firmware check cannot answer.
+static EMTXMStatus EMTXMStatusFromChip(void) {
+    uint32_t family = 0;
+    size_t size = sizeof(family);
+    if (sysctlbyname("hw.cpufamily", &family, &size, NULL, 0) != 0 || family == 0) return EMTXMStatusUnknown;
+    switch (family) {
+        case CPUFAMILY_ARM_VORTEX_TEMPEST:     // A12, A12X, A12Z
+        case CPUFAMILY_ARM_LIGHTNING_THUNDER:  // A13
+        case CPUFAMILY_ARM_FIRESTORM_ICESTORM: // A14, M1
+            return EMTXMStatusAbsent;
+        default:
+            return EMTXMStatusPresent;         // A15 / M2 and later
+    }
 }
 
 // MARK: - Trace file
@@ -104,20 +120,22 @@ static ember::jit::CodeRegion gCodeCache;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         if (@available(iOS 26.0, *)) {
-            // Heuristic used by current sideloaded JIT apps: devices that boot a
-            // Trusted Execution Monitor ship its firmware image in the preboot
-            // volume. Not an API — re-verify on new iOS releases. "Unknown" is
-            // reported (not "absent") when the volume cannot be read, and the UI
-            // offers a manual override for that case.
+            // 1. Firmware check: devices that boot a Trusted Execution Monitor
+            //    ship its image in the preboot volume. Only a positive result is
+            //    trusted — on iPadOS 27.0.1 (iPad14,8) the volume could not be
+            //    read at all, which says nothing either way.
             NSString *volume = EMFirstEntryWithNameLength(@"/System/Volumes/Preboot", 36);
             NSString *boot   = volume ? EMFirstEntryWithNameLength([volume stringByAppendingPathComponent:@"boot"], 96) : nil;
-            if (!boot) {
-                status = EMTXMStatusUnknown;
+            NSString *image  = [boot stringByAppendingPathComponent:
+                @"usr/standalone/firmware/FUD/Ap,TrustedExecutionMonitor.img4"];
+            if (image && access(image.fileSystemRepresentation, F_OK) == 0) {
+                status = EMTXMStatusPresent;
                 return;
             }
-            NSString *image = [boot stringByAppendingPathComponent:
-                @"usr/standalone/firmware/FUD/Ap,TrustedExecutionMonitor.img4"];
-            status = access(image.fileSystemRepresentation, F_OK) == 0 ? EMTXMStatusPresent : EMTXMStatusAbsent;
+            // 2. Chip generation: TXM arrived with the A15 / M2 generation. The
+            //    older families that can still run iOS 26+ are listed; anything
+            //    newer, including chips released after this was written, has it.
+            status = EMTXMStatusFromChip();
         } else {
             status = EMTXMStatusAbsent; // before iOS 26 a debugger attach is sufficient everywhere
         }

@@ -165,15 +165,25 @@ full speed.
 
 ## 8. What has and has not been verified
 
-- **Verified here:** the dual-mapped allocator's logic, on Linux (memfd-based
-  twin of the iOS path), including executing code through it — see
+- **Verified on a device (2026-11-10):** iPad Air M2 (`iPad14,8`), iPadOS
+  27.0.1, sideloaded with a development signature, StikDebug with
+  `universal.js`, started from Ember's own *Enable JIT Now* button. The full
+  sequence passed: debugger attached in about 3 s, the script prepared a
+  64 MiB region this process had mapped (about 0.3 s), `vm_remap` produced
+  the writable alias, the script detached, and generated code executed and
+  returned the expected value.
+- **Learned from that test:**
+  - The preboot firmware check could not read the volume on iPadOS 27 and
+    reported "unknown". Detection now falls back to the chip generation.
+  - Starting Ember from StikDebug's app list instead of from Ember's button
+    crashed an earlier build. That route does not tell StikDebug which
+    script Ember needs; use the button, or assign `universal.js` to Ember in
+    StikDebug.
+- **Verified on Linux:** the dual-mapped allocator's logic (memfd-based twin
+  of the iOS path), including executing code through it — see
   `Core/tests/core_tests.cpp`.
-- **Not verified here:** anything that needs an iPhone. The iOS branches of
-  `jit_memory.cpp`, the TXM handshake and the TXM detection heuristic were
-  written from the published protocol and common practice in current
-  sideloaded emulators, and have not been run on a device. Expect to debug
-  them on hardware, starting with a non-TXM device on iOS 17–18 where only
-  steps 1–5 (no TXM) are involved.
+- **Not verified:** non-TXM devices, iOS 17–26, the "debugger allocates"
+  variant, and LiveContainer.
 - **Never App Store.** Entitlement SPI, debugger-dependent JIT and
   `get-task-allow` all rule it out.
 
