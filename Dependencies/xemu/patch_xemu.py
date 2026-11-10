@@ -128,4 +128,39 @@ edit("block/file-posix.c",
      "#if defined(__APPLE__) && (__MACH__)\n",
      "#if defined(__APPLE__) && (__MACH__)\n#include <sys/param.h>\n#include <sys/mount.h>\n")
 
+# --- 10. Null renderer without OpenGL ------------------------------------------------------------
+# Even the renderer that draws nothing creates an offscreen OpenGL context
+# and hands the display a 1x1 black OpenGL texture. Without OpenGL it keeps
+# no context and reports "no framebuffer texture" (0).
+edit("hw/xbox/nv2a/pgraph/null/renderer.c",
+     '#include "gloffscreen.h"\n\n'
+     'static GloContext *g_null_gl_context;\n\n'
+     'static void early_context_init(void)\n{\n'
+     '    g_null_gl_context = glo_context_create();\n}\n',
+     '#ifdef CONFIG_OPENGL\n'
+     '#include "gloffscreen.h"\n\n'
+     'static GloContext *g_null_gl_context;\n#endif\n\n'
+     'static void early_context_init(void)\n{\n'
+     '#ifdef CONFIG_OPENGL\n'
+     '    g_null_gl_context = glo_context_create();\n#endif\n}\n')
+edit("hw/xbox/nv2a/pgraph/null/renderer.c",
+     '        if (r->blank_texture) {\n'
+     '            glo_set_current(g_null_gl_context);\n'
+     '            glDeleteTextures(1, &r->blank_texture);\n'
+     '            glo_set_current(NULL);\n'
+     '        }\n',
+     '#ifdef CONFIG_OPENGL\n'
+     '        if (r->blank_texture) {\n'
+     '            glo_set_current(g_null_gl_context);\n'
+     '            glDeleteTextures(1, &r->blank_texture);\n'
+     '            glo_set_current(NULL);\n'
+     '        }\n'
+     '#endif\n')
+edit("hw/xbox/nv2a/pgraph/null/renderer.c",
+     '    if (r) {\n        if (!r->blank_texture) {\n            static const uint8_t black_pixel',
+     '#ifdef CONFIG_OPENGL\n    if (r) {\n        if (!r->blank_texture) {\n            static const uint8_t black_pixel')
+edit("hw/xbox/nv2a/pgraph/null/renderer.c",
+     '        return r->blank_texture;\n    }\n\n    return 0;',
+     '        return r->blank_texture;\n    }\n#else\n    (void)r;\n#endif\n\n    return 0;')
+
 print(f"patch_xemu: {applied} edits applied")

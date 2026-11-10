@@ -39,6 +39,12 @@ echo "==== where each error occurs (up to 12 places per error)"
 grep -E ' (fatal )?error: ' "$LOG" | strip_paths | awk '{ key=$0; sub(/^[^ ]*:[0-9]+:[0-9]+: /, "", key); n[key]++; if (n[key] <= 12) print key "  <-  " $1 }' | sort | cut -c1-260 | head -200
 echo
 echo "==== linker output (if it got that far)"
-grep -E 'Undefined symbols|ld: |"_[A-Za-z0-9_]+", referenced from' "$LOG" | sort | uniq -c | sort -rn | cut -c1-200 | head -80
+grep -E 'Undefined symbols|ld: |clang(\+\+)?: error' "$LOG" | sort | uniq -c | sort -rn | cut -c1-200 | head -40
+echo
+echo "==== undefined symbols, each with the first object that needs it"
+awk '/", referenced from:/ { sym=$1; getline; sub(/^ +/, ""); print sym "  <-  " $0 }' "$LOG" | sort -u | cut -c1-200 | head -600
+echo
+echo "==== libraries in the prefix"
+ls "$ROOT/build-deps/prefix/lib" 2>/dev/null | tr '\n' ' ' 
 
 exit $status

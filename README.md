@@ -125,3 +125,9 @@ an extracted-disc folder containing `default.xbe`.
 
 Cover art is optional: put `<TITLEID>.png` or `.jpg` (the 8-digit hex ID
 shown under each game) in **Files › Ember › Covers**.
+
+## Licence
+
+Ember is free software under the GNU General Public License, version 2
+(see `LICENSE`). The emulation core it is being built on, xemu, and QEMU
+underneath it, are GPL-2.0, so the app as a whole is too.

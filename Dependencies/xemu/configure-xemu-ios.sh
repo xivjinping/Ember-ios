@@ -17,6 +17,8 @@ COMMIT="$(tr -d '[:space:]' < "$HERE/XEMU_COMMIT")"
 
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 TARGET="-arch arm64 -isysroot $SDK -miphoneos-version-min=$MIN_IOS"
+# Stand-ins for desktop-only headers (OpenGL types); see shims/.
+SHIMS="-I$HERE/shims"
 
 # A pinned, pristine checkout every time: patches are applied to known text.
 if [ ! -d "$SRC/.git" ]; then
@@ -39,9 +41,9 @@ cd "$BUILD"
     --target-list=i386-softmmu \
     --cross-prefix= \
     --cc=clang --cxx=clang++ --objcc=clang \
-    --extra-cflags="-DXBOX=1 $TARGET -I$PREFIX/include" \
-    --extra-cxxflags="$TARGET -I$PREFIX/include" \
-    --extra-objcflags="$TARGET -I$PREFIX/include" \
+    --extra-cflags="-DXBOX=1 $TARGET -I$PREFIX/include $SHIMS" \
+    --extra-cxxflags="$TARGET -I$PREFIX/include $SHIMS" \
+    --extra-objcflags="$TARGET -I$PREFIX/include $SHIMS" \
     --extra-ldflags="$TARGET -L$PREFIX/lib" \
     --enable-tcg \
     --enable-pixman \
