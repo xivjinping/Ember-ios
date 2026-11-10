@@ -2,7 +2,7 @@
 
 Read this first when picking the project up in a new session. It says where
 things stand, what comes next, and how the build rounds work. Last updated
-2026-11-10 (step 5 built; first start on the device pending).
+2026-11-10 (the BIOS boots into the kernel on the device; no picture yet).
 
 ## Goal
 
@@ -23,8 +23,8 @@ this app (Ember). `docs/ARCHITECTURE.md` explains the design and why xemu;
 | DSP56300 (Rust) | Built from source for `aarch64-apple-ios` by `Dependencies/xemu/build-dsp56300-ios.sh` (cached); xemu's own download is macOS-only |
 | xemu as libraries | `package-xemu-ios.sh` repacks the link inputs as `libember-xemu-core.a` (force-loaded) and `libember-xemu-deps.a`, writes `ember-xemu.xcconfig`, test-links them. About 46 MB together |
 | App linked with xemu | **Builds** (16 MB binary, was 1.4 MB). `Core/src/backend/xemu_backend.cpp` implements `core_api.h`; backend name is `xemu`. **Confirmed on the iPad (2026-11-10):** launches, shows the xemu status line, and finds the boot ROM (`mcpx_1.0.bin`), BIOS (`Complex_4627.bin`, 1 MB) and hard disk (`xbox_hdd.qcow2`) in `Documents/Ember/System` |
-| Code generator on Ember's JIT region | **Built, not yet run on the device.** `tcg/region.c` is patched to take its buffer from `tcg_ember_set_code_buffer()` (called through `ember_xemu_set_code_buffer` from `em_core_set_jit_region`): split-wx, no mmap/mprotect/guard pages |
-| Coroutines on iOS | `Dependencies/xemu/ember/coroutine-ember.c` replaces the sigaltstack backend (sigaltstack fails silently on iOS). Control flow tested on Linux with an x86 twin of the stack switch; the arm64 version is untested until the device runs it |
+| Code generator on Ember's JIT region | **Works on the device (2026-11-10).** `tcg/region.c` is patched to take its buffer from `tcg_ember_set_code_buffer()` (called through `ember_xemu_set_code_buffer` from `em_core_set_jit_region`): split-wx, no mmap/mprotect/guard pages |
+| Coroutines on iOS | `Dependencies/xemu/ember/coroutine-ember.c` replaces the sigaltstack backend (sigaltstack fails silently on iOS). Control flow tested on Linux with an x86 twin of the stack switch; the arm64 version ran on the device: `qemu_init` opened the qcow2 and the disc without trouble |
 | Starting the machine | **Enabled.** Needs the JIT region; otherwise the status line says to enable JIT |
 
 The app links xemu and tries to start it. The status line shows which system
@@ -81,23 +81,32 @@ Things to know:
    Confirmed on the device: the app launches and the system files are found.
 5. ~~Point QEMU's code generator at Ember's JIT region.~~ Built. Whether it
    works is exactly what step 6 finds out.
-6. **Start the BIOS on the device. Waiting on the owner's first attempt.**
-   Procedure: Enable JIT in the library, start a game, wait half a minute,
-   then send a screenshot of the status line and `Ember/xemu-log.txt` (and
-   Settings > JIT log if the app died). What to look for:
-   - `ember: starting xemu; code buffer from Ember's JIT region` must be the
-     first line; `ember: machine built, entering the main loop` means
-     `qemu_init` survived (block layer, coroutines, SDL audio, devices).
-   - The status line's CPU address should keep changing. `0xFFFFxxxx` is the
-     boot ROM/BIOS, `0x8001xxxx` and up is the kernel.
-   - `-d cpu_reset` is on: repeated "CPU Reset" dumps mean a reset loop.
-   - If the log ends before "machine built" the last lines name what
-     `qemu_init` rejected (it calls `exit`, so the app just closes).
-   Likely trouble, in rough order: the arm64 coroutine switch; SDL audio
-   opening next to the app's own AVAudioEngine; something in TCG touching
-   the region's protection that the patch missed.
-7. After the BIOS runs: a renderer (Metal) for nv2a, audio through the app,
-   and creating the hard-disk image automatically.
+6. ~~Start the BIOS on the device.~~ **Done (2026-11-10, iPad Air M2).**
+   First attempt, with Red Dead Revolver opened in place from an app-group
+   File Provider folder: the log shows `starting xemu; code buffer from
+   Ember's JIT region`, the launch parameters, exactly two `CPU Reset` dumps
+   (power-on; no reset loop), then `machine built, entering the main loop`.
+   The status line read "Console running. CPU at 0x80014386": an address in
+   the Xbox kernel, so the MCPX ROM and the BIOS ran and handed over to it.
+   Last log line: `main loop returned 0`, a clean exit. Most likely the
+   owner tapped X to close the game (that requests a shutdown); not yet
+   confirmed it was not the guest powering itself off. Only one sample of
+   the CPU address so far, so "kernel idling" vs "stuck" is still open.
+   Add a log line when the app requests the stop, and log the PC a few times,
+   to tell these apart next round.
+7. **A picture.** Biggest remaining piece; everything after it is much
+   easier to judge. Only xemu's *null* renderer is built, so the screen is
+   black. Candidate route: xemu's own Vulkan renderer over MoltenVK (Vulkan
+   on Metal) instead of a new Metal renderer, because it reuses all of
+   xemu's GPU emulation. First find out whether MoltenVK on this iPad offers
+   every Vulkan feature and extension that renderer requires; if not, the
+   alternative is a Metal renderer for nv2a. Then: build MoltenVK for iOS in
+   `build-ios-deps.sh` (invalidates the library cache), enable xemu's
+   Vulkan option, and present its output through `ember_xemu_lock_frame`.
+8. Audio through the app (xemu opens SDL audio itself; may clash with the
+   app's AVAudioEngine), touch input check, creating the hard-disk image
+   automatically when none is found, and showing a clear message when the
+   console has already run once in this launch.
 
 ## How a build round works
 
