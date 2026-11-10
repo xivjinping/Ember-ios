@@ -1,7 +1,10 @@
 name: iOS dependencies
 
-# Cross-compiles the engine's library dependencies for iOS. Separate from the
-# app build so that work on the port does not slow down every app change.
+# Work on the emulation core, kept apart from the app build so that an
+# experiment here cannot break the app, and app changes do not rebuild this.
+#
+#   1. Cross-compile the third-party libraries for iOS arm64 (cached).
+#   2. Fetch the pinned xemu revision, apply Ember's iOS changes, configure it.
 
 on:
   workflow_dispatch:
@@ -19,10 +22,19 @@ jobs:
       - name: Install build tools
         run: brew install meson ninja pkgconf
 
-      - name: Build
+      # The libraries only change when their build script does.
+      - name: Restore library cache
+        id: prefix
+        uses: actions/cache@v4
+        with:
+          path: build-deps/prefix
+          key: ios-prefix-${{ hashFiles('Dependencies/build-ios-deps.sh') }}
+
+      - name: Build libraries
+        if: steps.prefix.outputs.cache-hit != 'true'
         run: Dependencies/build-ios-deps.sh
 
-      - name: Show meson log on failure
+      - name: Show meson logs on failure
         if: failure()
         run: |
           for f in build-deps/*/meson-logs/meson-log.txt; do
@@ -34,3 +46,13 @@ jobs:
           name: ios-deps-prefix
           path: build-deps/prefix
           if-no-files-found: error
+
+      - name: Configure xemu for iOS
+        run: Dependencies/xemu/configure-xemu-ios.sh
+
+      - name: Show xemu configure logs on failure
+        if: failure()
+        run: |
+          for f in build-deps/xemu-build/config.log build-deps/xemu-build/meson-logs/meson-log.txt; do
+            [ -f "$f" ] && { echo "==== $f (last 120 lines)"; tail -120 "$f"; }
+          done
