@@ -1,0 +1,42 @@
+# Meson cross file for iOS (arm64 device). @SDK@ and @PREFIX@ are filled in by
+# the build scripts. Libraries are built static and installed into @PREFIX@,
+# and pkg-config is confined to that prefix so nothing from the macOS host
+# (Homebrew) can leak into an iOS build.
+
+[constants]
+sdk = '@SDK@'
+target = ['-arch', 'arm64', '-isysroot', sdk, '-miphoneos-version-min=15.0']
+
+[binaries]
+c = ['clang'] + target
+cpp = ['clang++'] + target
+objc = ['clang'] + target
+objcpp = ['clang++'] + target
+ar = 'ar'
+ranlib = 'ranlib'
+strip = 'strip'
+pkg-config = 'pkg-config'
+
+[built-in options]
+default_library = 'static'
+buildtype = 'release'
+
+[properties]
+needs_exe_wrapper = true
+pkg_config_libdir = '@PREFIX@/lib/pkgconfig'
+# Answers to configure-time questions that would need to run an iOS binary.
+have_c99_vsnprintf = true
+have_c99_snprintf = true
+have_unix98_printf = true
+have_strlcpy = true
+growing_stack = false
+va_val_copy = true
+have_proc_self_cmdline = false
+
+[host_machine]
+system = 'darwin'
+subsystem = 'ios'
+kernel = 'xnu'
+cpu_family = 'aarch64'
+cpu = 'aarch64'
+endian = 'little'
