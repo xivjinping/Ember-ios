@@ -178,4 +178,13 @@ edit("meson.build",
      "zlib = dependency('zlib', required: true)",
      "zlib = dependency('zlib', required: true, method: host_ios ? 'system' : 'auto')")
 
+# --- 7. Ember's replacements for the excluded desktop front end -----------------------
+# Controller state, notifications, snapshot hooks and the packet-capture
+# client, which the core still calls. See ember/ember-frontend.c.
+import shutil
+shutil.copy(Path(__file__).parent / "ember" / "ember-frontend.c", root / "ui" / "ember-frontend.c")
+edit("ui/meson.build",
+     "                      'xemu-widescreen.c'),\n",
+     "                      'xemu-widescreen.c', 'ember-frontend.c'),\n")
+
 print(f"patch_xemu: {applied} edits applied")
