@@ -25,7 +25,7 @@ jobs:
       # The libraries only change when their build script does.
       - name: Restore library cache
         id: prefix
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: build-deps/prefix
           key: ios-prefix-${{ hashFiles('Dependencies/build-ios-deps.sh') }}
@@ -33,6 +33,15 @@ jobs:
       - name: Build libraries
         if: steps.prefix.outputs.cache-hit != 'true'
         run: Dependencies/build-ios-deps.sh
+
+      # Saved here, not at the end of the job, so that a failure in the xemu
+      # steps below does not throw away twenty minutes of library builds.
+      - name: Save library cache
+        if: steps.prefix.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build-deps/prefix
+          key: ios-prefix-${{ hashFiles('Dependencies/build-ios-deps.sh') }}
 
       - name: Show meson logs on failure
         if: failure()
