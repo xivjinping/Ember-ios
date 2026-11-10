@@ -1,0 +1,61 @@
+# XcodeGen spec — the Xcode project is generated, never committed:
+#   brew install xcodegen && xcodegen generate
+# That keeps the repository buildable from cloud CI without anyone owning a Mac.
+name: Ember
+
+options:
+  bundleIdPrefix: app.ember
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CLANG_CXX_LANGUAGE_STANDARD: "c++20"
+    CLANG_CXX_LIBRARY: "libc++"
+    CLANG_ENABLE_MODULES: YES
+    ENABLE_BITCODE: NO
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+  configs:
+    Release:
+      GCC_OPTIMIZATION_LEVEL: "3"
+      SWIFT_OPTIMIZATION_LEVEL: "-O"
+      LLVM_LTO: YES_THIN
+
+targets:
+  Ember:
+    type: application
+    platform: iOS
+    sources:
+      - path: Frontend
+      - path: Bridge
+      - path: MetalShaders          # .metal files compile into default.metallib
+      - path: Core/src              # the portable C++ core, compiled into the app
+      - path: Core/include
+        buildPhase: none
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.ember.Ember
+        PRODUCT_NAME: Ember
+        INFOPLIST_FILE: Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: Resources/Ember.entitlements
+        SWIFT_OBJC_BRIDGING_HEADER: Bridge/Ember-Bridging-Header.h
+        HEADER_SEARCH_PATHS:
+          - "$(SRCROOT)/Core/include"
+          - "$(SRCROOT)/Core/src"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ARCHS: arm64
+        # Development signing is what puts get-task-allow in the signature.
+        CODE_SIGN_STYLE: Automatic
+    dependencies:
+      - sdk: Metal.framework
+      - sdk: MetalKit.framework
+      - sdk: GameController.framework
+      - sdk: MetalFX.framework   # iOS 16+; weak so the app still launches on iOS 15
+        weak: true
+      - sdk: AVFoundation.framework
+      - sdk: Security.framework

@@ -1,0 +1,196 @@
+import SwiftUI
+import UIKit
+
+/// On-screen controller in the original pad's arrangement: left stick above
+/// the D-pad, face buttons above the right stick, Black and White beside the
+/// face buttons, triggers in the top corners, Back and Start in the middle.
+/// Only the controls intercept touches; the picture stays visible between them.
+@MainActor
+struct VirtualGamePadView: View {
+    let input: InputMixer
+    var layout: ControllerLayout
+    var opacity: Double
+    var haptics: Bool
+
+    // The pad's own face-button colours.
+    private static let green = Color(red: 0.30, green: 0.78, blue: 0.35)
+    private static let red = Color(red: 0.90, green: 0.25, blue: 0.22)
+    private static let blue = Color(red: 0.22, green: 0.48, blue: 0.92)
+    private static let yellow = Color(red: 0.95, green: 0.80, blue: 0.20)
+
+    var body: some View {
+        GeometryReader { proxy in
+            let compact = proxy.size.height < 420
+            let unit: CGFloat = compact ? 46 : 58
+
+            ZStack {
+                // Triggers
+                VStack {
+                    HStack {
+                        analogKey("LT", .leftTrigger, CGSize(width: unit * 1.6, height: unit * 0.75))
+                        Spacer()
+                        analogKey("RT", .rightTrigger, CGSize(width: unit * 1.6, height: unit * 0.75))
+                    }
+                    Spacer()
+                }
+
+                // Left: stick (press = L3 key beside it) above D-pad
+                VStack(alignment: .leading, spacing: 12) {
+                    Spacer()
+                    HStack(alignment: .bottom, spacing: 8) {
+                        StickView(diameter: unit * 2.1) { input.virtualPad.leftStick = $0 }
+                        digitalKey("L3", .leftThumb, unit * 0.62)
+                    }
+                    dpad(unit)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Right: face buttons (with Black/White) above stick
+                VStack(alignment: .trailing, spacing: 12) {
+                    Spacer()
+                    faceCluster(unit)
+                    HStack(alignment: .bottom, spacing: 8) {
+                        digitalKey("R3", .rightThumb, unit * 0.62)
+                        StickView(diameter: unit * 1.7) { input.virtualPad.rightStick = $0 }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+
+                // Back / Start
+                VStack {
+                    Spacer()
+                    HStack(spacing: 22) {
+                        digitalKey("BACK", .back, unit * 0.62, wide: true)
+                        digitalKey("START", .start, unit * 0.62, wide: true)
+                    }
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 10)
+        }
+        .opacity(opacity)
+    }
+
+    private func faceCluster(_ unit: CGFloat) -> some View {
+        let small = CGSize(width: unit * 0.62, height: unit * 0.62)
+        let blackWhite = HStack(spacing: 10) {
+            analogKey("WHT", .white, small, tint: .white)
+            analogKey("BLK", .black, small, tint: Color(white: 0.35))
+        }
+        let diamond = VStack(spacing: 2) {
+            analogKey("Y", .y, CGSize(width: unit, height: unit), tint: Self.yellow)
+            HStack(spacing: unit * 0.9) {
+                analogKey("X", .x, CGSize(width: unit, height: unit), tint: Self.blue)
+                analogKey("B", .b, CGSize(width: unit, height: unit), tint: Self.red)
+            }
+            analogKey("A", .a, CGSize(width: unit, height: unit), tint: Self.green)
+        }
+        return VStack(alignment: .trailing, spacing: 8) {
+            if layout == .duke { blackWhite }
+            diamond
+            if layout == .controllerS { blackWhite }
+        }
+    }
+
+    private func dpad(_ unit: CGFloat) -> some View {
+        let s = unit * 0.82
+        return VStack(spacing: 2) {
+            digitalKey("▲", .dpadUp, s)
+            HStack(spacing: s) { digitalKey("◀", .dpadLeft, s); digitalKey("▶", .dpadRight, s) }
+            digitalKey("▼", .dpadDown, s)
+        }
+    }
+
+    private func digitalKey(_ label: String, _ button: PadButtons, _ size: CGFloat, wide: Bool = false) -> some View {
+        PadKey(label: label, size: CGSize(width: wide ? size * 2.1 : size, height: size), tint: .white, haptics: haptics) { pressed in
+            if pressed { input.virtualPad.buttons.insert(button) } else { input.virtualPad.buttons.remove(button) }
+        }
+    }
+
+    /// A touch screen cannot sense pressure, so these report fully pressed (255).
+    private func analogKey(_ label: String, _ button: AnalogButton, _ size: CGSize, tint: Color = .white) -> some View {
+        PadKey(label: label, size: size, tint: tint, haptics: haptics) { pressed in
+            input.virtualPad[button] = pressed ? 255 : 0
+        }
+    }
+}
+
+/// A button that reports press and release. A zero-distance drag gesture is
+/// used instead of Button so the press registers on touch-down, not touch-up.
+private struct PadKey: View {
+    let label: String
+    let size: CGSize
+    let tint: Color
+    let haptics: Bool
+    let onChange: (Bool) -> Void
+    @State private var pressed = false
+
+    var body: some View {
+        let radius = min(size.width, size.height) / 2
+        Text(label)
+            .font(.system(size: min(size.width, size.height) * (label.count > 2 ? 0.30 : 0.40), weight: .bold, design: .rounded))
+            .foregroundColor(.white)
+            .frame(width: size.width, height: size.height)
+            .background(
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(tint.opacity(pressed ? 0.60 : 0.22))
+                    .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(tint.opacity(0.75), lineWidth: 1.5))
+            )
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        guard !pressed else { return }
+                        pressed = true
+                        onChange(true)
+                        if haptics { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+                    }
+                    .onEnded { _ in
+                        pressed = false
+                        onChange(false)
+                    }
+            )
+            .accessibilityLabel(Text(label))
+            .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// Analog stick: drag anywhere inside the ring; output is -1...1 with up = +y.
+private struct StickView: View {
+    let diameter: CGFloat
+    let onChange: (CGPoint) -> Void
+    @State private var offset = CGSize.zero
+
+    var body: some View {
+        let radius = diameter / 2
+        let travel = radius * 0.6
+        ZStack {
+            Circle().fill(Color.white.opacity(0.10))
+            Circle().stroke(Color.white.opacity(0.45), lineWidth: 1.5)
+            Circle().fill(Color.white.opacity(0.40))
+                .frame(width: radius * 0.9, height: radius * 0.9)
+                .offset(offset)
+        }
+        .frame(width: diameter, height: diameter)
+        .contentShape(Circle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    var dx = value.location.x - radius
+                    var dy = value.location.y - radius
+                    let length = max(sqrt(dx * dx + dy * dy), 0.0001)
+                    if length > travel {
+                        dx *= travel / length
+                        dy *= travel / length
+                    }
+                    offset = CGSize(width: dx, height: dy)
+                    onChange(CGPoint(x: dx / travel, y: -dy / travel))
+                }
+                .onEnded { _ in
+                    offset = .zero
+                    onChange(.zero)
+                }
+        )
+        .accessibilityHidden(true)
+    }
+}
