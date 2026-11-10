@@ -26,10 +26,15 @@ on:
       - '**.md'
   pull_request:
   workflow_dispatch:
+  # New xemu libraries: build the app again so it links them.
+  workflow_run:
+    workflows: ["iOS dependencies"]
+    types: [completed]
 
 jobs:
   # The portable core is tested on Linux: fast, and no Apple hardware needed.
   core-tests:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +59,24 @@ jobs:
       - name: Install tools
         run: brew install xcodegen ldid
 
+      # The xemu libraries come from the "iOS dependencies" workflow, which
+      # saves a new cache entry on every successful run; take the newest.
+      # Without them the app is built with the stub backend.
+      - name: Restore xemu libraries
+        uses: actions/cache/restore@v4
+        with:
+          path: build-deps/xemu-lib
+          key: xemu-ios-lib-none
+          restore-keys: xemu-ios-lib-
+
+      - name: Show which backend is linked
+        run: |
+          if [ -f build-deps/xemu-lib/ember-xemu.xcconfig ]; then
+            echo "Backend: xemu"; ls -la build-deps/xemu-lib
+          else
+            echo "::warning::xemu libraries not found in the cache; building with the stub backend."
+          fi
+
       - name: Generate Xcode project
         run: xcodegen generate
 
@@ -75,6 +98,9 @@ jobs:
           # they are embedded; sideloading tools read them from the binary and
           # keep the ones the user's profile allows.
           ldid -SResources/Ember.entitlements "$APP/Ember"
+          # Printed so the log shows what was linked without downloading the .ipa.
+          echo "backend: $(strings "$APP/Ember" | grep -c 'ember-machine' | sed 's/^0$/stub/; s/^[1-9].*/xemu/')"
+          ls -la "$APP/Ember"
           mkdir -p unsigned/Payload
           cp -R "$APP" unsigned/Payload/
           (cd unsigned && zip -qry ../Ember-unsigned.ipa Payload)

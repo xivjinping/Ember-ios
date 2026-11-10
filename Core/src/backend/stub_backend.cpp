@@ -8,6 +8,9 @@
 // and reports where execution stopped (first kernel call, or first opcode the
 // reference interpreter lacks). After that it draws a test pattern that
 // reacts to the controller and plays a tone while A is held.
+// Left out when the app links the xemu libraries (see xemu_backend.cpp).
+#if !defined(EMBER_BACKEND_XEMU)
+
 #include "ember/core_api.h"
 
 #include "../cpu/x86_state.h"
@@ -379,3 +382,5 @@ void em_core_get_stats(em_core* core, em_stats* out) {
     std::lock_guard<std::mutex> lock(core->statusMutex);
     std::snprintf(out->status, sizeof(out->status), "%s", core->status.c_str());
 }
+
+#endif // !EMBER_BACKEND_XEMU

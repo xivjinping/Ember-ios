@@ -37,6 +37,11 @@ targets:
       - path: Core/include
         buildPhase: none
       - path: Resources/Assets.xcassets   # app icon (regenerate with scripts/make_icon.py)
+    # Chooses the emulation backend: the stub, or xemu when its libraries
+    # have been built into build-deps/xemu-lib (see Config/Backend.xcconfig).
+    configFiles:
+      Debug: Config/Backend.xcconfig
+      Release: Config/Backend.xcconfig
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.ember.Ember
@@ -49,6 +54,9 @@ targets:
         HEADER_SEARCH_PATHS:
           - "$(SRCROOT)/Core/include"
           - "$(SRCROOT)/Core/src"
+          - "$(SRCROOT)/Dependencies/xemu/ember"
+        OTHER_LDFLAGS: "$(inherited) $(EMBER_XEMU_LDFLAGS)"
+        GCC_PREPROCESSOR_DEFINITIONS: "$(inherited) $(EMBER_XEMU_DEFS)"
         TARGETED_DEVICE_FAMILY: "1,2"
         ARCHS: arm64
         # Development signing is what puts get-task-allow in the signature.

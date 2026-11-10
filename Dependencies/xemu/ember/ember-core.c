@@ -10,6 +10,7 @@
  * Copied to ui/ by Dependencies/xemu/patch_xemu.py. GPL-2.0, like xemu.
  */
 #include "qemu/osdep.h"
+#include <locale.h>
 #include "qemu/main-loop.h"
 #include "qemu/module.h"
 #include "qemu/thread.h"

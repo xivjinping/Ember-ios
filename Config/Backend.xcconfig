@@ -1,0 +1,11 @@
+// Which emulation backend the app links.
+//
+// With these empty values the app uses the built-in stub
+// (Core/src/backend/stub_backend.cpp). When the xemu libraries have been
+// built (Dependencies/xemu/package-xemu-ios.sh, done by the "iOS
+// dependencies" workflow), the generated file below overrides them and the
+// app links xemu instead (Core/src/backend/xemu_backend.cpp).
+EMBER_XEMU_LDFLAGS =
+EMBER_XEMU_DEFS =
+
+#include? "../build-deps/xemu-lib/ember-xemu.xcconfig"

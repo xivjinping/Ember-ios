@@ -91,6 +91,12 @@ private struct RunningView: View {
                     .font(.caption2).multilineTextAlignment(.center).padding(6)
                     .background(Color.orange.opacity(0.85)).cornerRadius(6)
                     .padding(.horizontal, 60)
+                } else if let status = session.stats?.status, !status.isEmpty {
+                    // What the console is doing, or what it still needs.
+                    Text(status)
+                        .font(.caption2).multilineTextAlignment(.center).padding(6)
+                        .background(Color.black.opacity(0.6)).cornerRadius(6)
+                        .padding(.horizontal, 60)
                 }
                 if settings.showStats, let stats = session.stats {
                     Text(String(format: "%.0f fps · %@ · %ld MB RAM\n%@", stats.fps, session.cpuNote, Int(stats.ramMB),
