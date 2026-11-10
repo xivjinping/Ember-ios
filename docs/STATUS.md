@@ -22,7 +22,7 @@ this app (Ember). `docs/ARCHITECTURE.md` explains the design and why xemu;
 | xemu link for iOS | **Links.** The executable is only a CI check; the app uses the libraries below |
 | DSP56300 (Rust) | Built from source for `aarch64-apple-ios` by `Dependencies/xemu/build-dsp56300-ios.sh` (cached); xemu's own download is macOS-only |
 | xemu as libraries | `package-xemu-ios.sh` repacks the link inputs as `libember-xemu-core.a` (force-loaded) and `libember-xemu-deps.a`, writes `ember-xemu.xcconfig`, test-links them. About 46 MB together |
-| App linked with xemu | **Builds** (16 MB binary, was 1.4 MB). `Core/src/backend/xemu_backend.cpp` implements `core_api.h`; backend name is `xemu`. **Not yet confirmed on the device** that it launches |
+| App linked with xemu | **Builds** (16 MB binary, was 1.4 MB). `Core/src/backend/xemu_backend.cpp` implements `core_api.h`; backend name is `xemu`. **Confirmed on the iPad (2026-11-10):** launches, shows the xemu status line, and finds the boot ROM (`mcpx_1.0.bin`), BIOS (`Complex_4627.bin`, 1 MB) and hard disk (`xbox_hdd.qcow2`) in `Documents/Ember/System` |
 | Starting the machine | **Deliberately blocked** in `xemu_backend.cpp` (`kCodeGeneratorReady = false`) until step 5; QEMU would otherwise fail to allocate code memory and end the app |
 
 The app links xemu but does not start it yet. Starting a game shows a status
@@ -76,10 +76,7 @@ Things to know:
 3. ~~Ember's replacements for the missing symbols.~~ Done for what the link
    needed.
 4. ~~Static library, linked into the app, `core_api.h` on top.~~ Done in CI.
-   **Waiting on the owner:** install the `.ipa` and confirm the app launches,
-   Settings shows "Core backend: xemu", and starting a game shows the status
-   line about system files. A crash at launch would point at constructors
-   that QEMU/GLib run when the app loads.
+   Confirmed on the device: the app launches and the system files are found.
 5. **Point QEMU's code generator at Ember's JIT region.** TCG has a
    split-wx mode with a `vm_remap` path in `tcg/region.c`; on iOS the RX
    region must come from the debugger-script protocol
