@@ -179,12 +179,21 @@ edit("meson.build",
      "zlib = dependency('zlib', required: true, method: host_ios ? 'system' : 'auto')")
 
 # --- 7. Ember's replacements for the excluded desktop front end -----------------------
-# Controller state, notifications, snapshot hooks and the packet-capture
-# client, which the core still calls. See ember/ember-frontend.c.
+# ember-frontend.c: controller state, notifications, snapshot hooks and the
+#   packet-capture client, which the core still calls.
+# ember-core.c: starts the machine on its own thread and provides the
+#   "xemu" display that vl.c asks for, without a window.
+# ember-xemu.h: the C interface the app uses.
+# ember-exe-main.c: main() for the executable only (see that file).
 import shutil
-shutil.copy(Path(__file__).parent / "ember" / "ember-frontend.c", root / "ui" / "ember-frontend.c")
+for name in ("ember-frontend.c", "ember-core.c", "ember-xemu.h", "ember-exe-main.c"):
+    shutil.copy(Path(__file__).parent / "ember" / name, root / "ui" / name)
 edit("ui/meson.build",
      "                      'xemu-widescreen.c'),\n",
-     "                      'xemu-widescreen.c', 'ember-frontend.c'),\n")
+     "                      'xemu-widescreen.c', 'ember-frontend.c', 'ember-core.c'),\n")
+edit("meson.build",
+     "      'sources': files('system/main.c'),\n      'dependencies': [sdl]\n    }]",
+     "      'sources': files('system/main.c') + (host_ios ? files('ui/ember-exe-main.c') : []),\n"
+     "      'dependencies': [sdl]\n    }]")
 
 print(f"patch_xemu: {applied} edits applied")

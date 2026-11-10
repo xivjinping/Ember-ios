@@ -6,7 +6,8 @@
  * ui/xemu-snapshots.c, which draw windows, read SDL gamepads and use OpenGL.
  * None of that exists in Ember: the SwiftUI app owns the window and the
  * controls. This file supplies the same functions with the behaviour the
- * core needs, and a small API (ember_input_*) for the app to feed it.
+ * core needs, and a small API (ember_input_*, declared in ember-xemu.h) for
+ * the app to feed it.
  *
  * Copied to ui/ember-frontend.c by Dependencies/xemu/patch_xemu.py.
  * GPL-2.0, like the rest of xemu.
@@ -20,6 +21,7 @@
 #include "ui/xemu-input.h"
 #include "ui/xemu-notifications.h"
 #include "ui/xemu-snapshots.h"
+#include "ui/ember-xemu.h"
 
 #define EMBER_PORTS 4
 
