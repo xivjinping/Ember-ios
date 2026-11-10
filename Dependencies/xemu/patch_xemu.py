@@ -111,4 +111,21 @@ edit("hw/xbox/nv2a/pgraph/meson.build",
      "subdir('gl')\nsubdir('glsl')\n",
      "if not host_ios\n  subdir('gl')\n  subdir('glsl')\nendif\n")
 
+# --- 8. JIT write protection ----------------------------------------------------------------
+# On macOS, QEMU flips a per-thread switch between writing and executing JIT
+# pages. That call does not exist on iOS. Ember gives the code generator two
+# views of its buffer instead (one writable, one executable), so on iOS the
+# switch has nothing to do.
+edit("include/qemu/osdep.h",
+     "#ifdef __APPLE__\nstatic inline void qemu_thread_jit_execute(void)",
+     "#if defined(__APPLE__) && !defined(__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__)\n"
+     "static inline void qemu_thread_jit_execute(void)")
+
+# --- 9. statfs on iOS ---------------------------------------------------------------------------
+# The header that declares it was only included together with the macOS
+# CD/DVD device headers, which iOS does not have.
+edit("block/file-posix.c",
+     "#if defined(__APPLE__) && (__MACH__)\n",
+     "#if defined(__APPLE__) && (__MACH__)\n#include <sys/param.h>\n#include <sys/mount.h>\n")
+
 print(f"patch_xemu: {applied} edits applied")

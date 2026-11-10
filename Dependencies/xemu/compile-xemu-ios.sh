@@ -35,6 +35,9 @@ echo
 echo "==== first occurrence of each error, with its location"
 grep -E ' (fatal )?error: ' "$LOG" | strip_paths | awk '{ key=$0; sub(/^[^ ]*:[0-9]+:[0-9]+: /, "", key); if (!(key in seen)) { seen[key]=1; print } }' | cut -c1-260 | head -120
 echo
+echo "==== where each error occurs (up to 12 places per error)"
+grep -E ' (fatal )?error: ' "$LOG" | strip_paths | awk '{ key=$0; sub(/^[^ ]*:[0-9]+:[0-9]+: /, "", key); n[key]++; if (n[key] <= 12) print key "  <-  " $1 }' | sort | cut -c1-260 | head -200
+echo
 echo "==== linker output (if it got that far)"
 grep -E 'Undefined symbols|ld: |"_[A-Za-z0-9_]+", referenced from' "$LOG" | sort | uniq -c | sort -rn | cut -c1-200 | head -80
 

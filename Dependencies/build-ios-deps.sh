@@ -7,7 +7,7 @@
 # Output: static libraries, headers and .pc files under build-deps/prefix,
 # which later stages point pkg-config at.
 #
-# Libraries so far: glib (+ libffi, pcre2, libintl stub), pixman, libsamplerate.
+# Libraries so far: glib (+ libffi, pcre2, libintl stub), pixman, libsamplerate, SDL3.
 # Each one is skipped if its pkg-config file is already in the prefix.
 set -euo pipefail
 
@@ -19,6 +19,8 @@ MIN_IOS="15.0"
 GLIB_VERSION="2.88.4"
 PIXMAN_VERSION="0.44.2"
 SAMPLERATE_VERSION="0.2.2"
+# The SDL revision xemu itself pins (subprojects/sdl3.wrap at XEMU_COMMIT).
+SDL_REVISION="829a65d769d935c4852f8159e964312c0957260a"
 
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 mkdir -p "$PREFIX/lib/pkgconfig" "$SRC"
@@ -125,6 +127,34 @@ if ! have samplerate; then
         -DLIBSAMPLERATE_INSTALL=ON
     cmake --build "$WORK/samplerate-build"
     cmake --install "$WORK/samplerate-build"
+fi
+
+# --- SDL3 (xemu's audio output and controller types are written against it) ------
+# SDL supports iOS directly. Ember keeps its own window and UI; SDL is used
+# for the parts of the core that expect it (audio streams, gamepad types).
+if ! have sdl3; then
+    if [ ! -d "$SRC/SDL/.git" ]; then
+        mkdir -p "$SRC/SDL"
+        git -C "$SRC/SDL" init -q
+        git -C "$SRC/SDL" remote add origin https://github.com/libsdl-org/SDL
+    fi
+    git -C "$SRC/SDL" fetch -q --depth 1 origin "$SDL_REVISION"
+    git -C "$SRC/SDL" checkout -q -f FETCH_HEAD
+    rm -rf "$WORK/sdl-build"
+    cmake -S "$SRC/SDL" -B "$WORK/sdl-build" -G Ninja \
+        -DCMAKE_SYSTEM_NAME=iOS \
+        -DCMAKE_OSX_SYSROOT=iphoneos \
+        -DCMAKE_OSX_ARCHITECTURES=arm64 \
+        -DCMAKE_OSX_DEPLOYMENT_TARGET="$MIN_IOS" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+        -DSDL_SHARED=OFF \
+        -DSDL_STATIC=ON \
+        -DSDL_TEST_LIBRARY=OFF \
+        -DSDL_TESTS=OFF \
+        -DSDL_EXAMPLES=OFF
+    cmake --build "$WORK/sdl-build"
+    cmake --install "$WORK/sdl-build"
 fi
 
 echo

@@ -57,7 +57,7 @@ cd "$BUILD"
     --disable-hvf \
     --disable-cocoa \
     --disable-coreaudio \
-    --disable-sdl \
+    --enable-sdl \
     --disable-gtk \
     --disable-vnc \
     --disable-curses \
