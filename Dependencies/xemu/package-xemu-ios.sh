@@ -65,6 +65,8 @@ while i < len(tokens):
             core.append(absolute(t))
     elif t.endswith((".a", ".fa")) and not t.startswith("-"):
         deps.append(absolute(t))
+    elif t.endswith(".dylib"):
+        sys.exit(f"package-xemu-ios: {t} is a shared library; make it static in patch_xemu.py")
     elif t in ("-framework", "-weak_framework"):
         flags += [t, nxt]; i += 1
     elif t.startswith(("-Wl,-framework,", "-Wl,-weak_framework,")):

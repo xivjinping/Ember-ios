@@ -196,4 +196,12 @@ edit("meson.build",
      "      'sources': files('system/main.c') + (host_ios ? files('ui/ember-exe-main.c') : []),\n"
      "      'dependencies': [sdl]\n    }]")
 
+# --- 8. Static slirp -----------------------------------------------------------------------
+# The bundled user-mode network library is built as a .dylib by default; the
+# app links everything statically.
+edit("meson.build",
+     "  slirp = dependency('slirp', required: get_option('slirp'),\n",
+     "  slirp = dependency('slirp', required: get_option('slirp'),\n"
+     "                     default_options: ['default_library=static'],\n")
+
 print(f"patch_xemu: {applied} edits applied")
