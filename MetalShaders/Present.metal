@@ -28,7 +28,7 @@ vertex VertexOut present_vertex(uint vertexID [[vertex_id]],
     return out;
 }
 
-fragment float4 present_fragment(VertexOut in,
+fragment float4 present_fragment(VertexOut in [[stage_in]],
                                  texture2d<float> image [[texture(0)]],
                                  sampler imageSampler [[sampler(0)]]) {
     return float4(image.sample(imageSampler, in.uv).rgb, 1.0);
