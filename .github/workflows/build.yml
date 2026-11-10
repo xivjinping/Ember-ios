@@ -99,7 +99,7 @@ jobs:
           # keep the ones the user's profile allows.
           ldid -SResources/Ember.entitlements "$APP/Ember"
           # Printed so the log shows what was linked without downloading the .ipa.
-          echo "backend: $(strings "$APP/Ember" | grep -c 'ember-machine' | sed 's/^0$/stub/; s/^[1-9].*/xemu/')"
+          if nm "$APP/Ember" 2>/dev/null | grep -q ' _ember_xemu_start$'; then echo "linked backend: xemu"; else echo "linked backend: stub"; fi
           ls -la "$APP/Ember"
           mkdir -p unsigned/Payload
           cp -R "$APP" unsigned/Payload/

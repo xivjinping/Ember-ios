@@ -2,7 +2,7 @@
 
 Read this first when picking the project up in a new session. It says where
 things stand, what comes next, and how the build rounds work. Last updated
-2026-11-10 (after the link step).
+2026-11-10 (after step 4: xemu linked into the app).
 
 ## Goal
 
@@ -19,57 +19,95 @@ this app (Ember). `docs/ARCHITECTURE.md` explains the design and why xemu;
 | iOS libraries | GLib 2.88.4, pixman 0.44.2, libsamplerate 0.2.2 and SDL3 (xemu's pinned revision) build for iOS arm64 |
 | xemu configure for iOS | Passes |
 | xemu compile for iOS | **All 1,687 steps compile** |
-| xemu link for iOS | **Everything resolves except `_main`**, which is expected: xemu's `main` lives in `ui/xemu.c`, which is excluded. Step 4 turns the target into a library |
+| xemu link for iOS | **Links.** The executable is only a CI check; the app uses the libraries below |
 | DSP56300 (Rust) | Built from source for `aarch64-apple-ios` by `Dependencies/xemu/build-dsp56300-ios.sh` (cached); xemu's own download is macOS-only |
-| Front-end replacements | `Dependencies/xemu/ember/ember-frontend.c`: controller ports, notifications, snapshot hooks, pcap stub |
+| xemu as libraries | `package-xemu-ios.sh` repacks the link inputs as `libember-xemu-core.a` (force-loaded) and `libember-xemu-deps.a`, writes `ember-xemu.xcconfig`, test-links them. About 46 MB together |
+| App linked with xemu | **Builds** (16 MB binary, was 1.4 MB). `Core/src/backend/xemu_backend.cpp` implements `core_api.h`; backend name is `xemu`. **Not yet confirmed on the device** that it launches |
+| Starting the machine | **Deliberately blocked** in `xemu_backend.cpp` (`kCodeGeneratorReady = false`) until step 5; QEMU would otherwise fail to allocate code memory and end the app |
 
-The app still runs the stub backend. No xemu code is in the app yet.
+The app links xemu but does not start it yet. Starting a game shows a status
+line: which system files are missing, or that they were found.
 
-## Where stage 3 stands
+## How the xemu side is put together
 
 xemu is fetched at the revision in `Dependencies/xemu/XEMU_COMMIT`, changed
-by `Dependencies/xemu/patch_xemu.py` (23 edits, each asserts the text it
-replaces, plus a copy of `ember/ember-frontend.c` into `ui/`), configured by
-`configure-xemu-ios.sh` and compiled by `compile-xemu-ios.sh`, which prints a
-grouped error summary. Steps 1 to 3 below are done: the last two files
-compile, and the link finds every symbol except `_main`.
+by `Dependencies/xemu/patch_xemu.py` (25 edits, each asserts the text it
+replaces, plus copies of the files in `Dependencies/xemu/ember/` into xemu's
+`ui/`), configured by `configure-xemu-ios.sh`, compiled and linked by
+`compile-xemu-ios.sh` (prints a grouped error summary) and packaged by
+`package-xemu-ios.sh`.
 
-`ember-frontend.c` exposes `ember_input_set(port, buttons, axes)` and
-`ember_input_get_rumble(port, &l, &r)` for the app to feed the emulated
-gamepads. Notifications only go to the log for now, and snapshots store plain
-machine state without xemu's thumbnail header.
+Ember's own files inside xemu (`Dependencies/xemu/ember/`):
+
+- `ember-xemu.h`: the C interface the app uses. Nothing else crosses over.
+- `ember-core.c`: `ember_xemu_start()` loads xemu's settings, fills in the
+  file paths and runs `qemu_init` + `qemu_main_loop` on its own thread. It
+  registers the `xemu` display that `vl.c` asks for, without a window: a
+  display listener copies the guest surface to a BGRA buffer
+  (`ember_xemu_lock_frame`). It plugs gamepads into the USB ports, and does
+  pause and stop through bottom halves on QEMU's main loop.
+- `ember-frontend.c`: controller state fed by `ember_input_set`,
+  notifications (to the log), snapshot hooks, pcap stub.
+- `ember-exe-main.c`: `main()` for the CI-only executable.
+
+Things to know:
+
+- QEMU keeps process-wide state: the machine can be started **once per app
+  launch**. The backend says so if asked again.
+- Fatal errors inside QEMU call `exit()`, which ends the app. The backend
+  checks the files first and sends stdout/stderr to
+  `Documents/Ember/xemu-log.txt`.
+- System files go in `Documents/Ember/System` (Files > Ember > Ember >
+  System) and are recognised by size/extension, not name: the 512-byte boot
+  ROM, a BIOS `.bin` of 256 KB/512 KB/1 MB, a `.qcow2` or `.img` hard disk.
+  xemu writes `eeprom.bin` there itself.
+- The nv2a renderer is xemu's *null* renderer: nothing the GPU draws is
+  visible. Expect a black picture even when the BIOS runs; progress shows in
+  the log. A Metal renderer is a later stage.
+- Audio: xemu's APU plays through SDL directly, not through
+  `em_core_read_audio`. This may clash with the app's own audio session;
+  look at it once the BIOS runs.
+- Only `.iso` titles are accepted by the xemu backend.
 
 ## Next steps, in order
 
 1. ~~Fix the last two files.~~ Done.
-2. ~~Link.~~ Done apart from `_main` (see step 4).
-3. ~~Ember's replacements for the missing symbols.~~ Done for the nine the
-   link needed. More will turn up once the core runs (settings paths, the
-   display hand-off to Metal, audio).
-4. **Produce a static library** instead of an executable, link it into the
-   app in place of `Core/src/backend/stub_backend.cpp`, and implement
-   `Core/include/ember/core_api.h` on top of it. QEMU's `main` (xemu's is in
-   `ui/xemu.c`; QEMU's generic one is `system/main.c`) must become a function
-   the app calls on a background thread. Expect to bundle `libdsp56300_emu_ffi.a`
-   and the QEMU/xemu archives into one library, and to need the font/ROM data
-   and any `-force_load` archives from the current link command (printed in
-   the log).
+2. ~~Link.~~ Done.
+3. ~~Ember's replacements for the missing symbols.~~ Done for what the link
+   needed.
+4. ~~Static library, linked into the app, `core_api.h` on top.~~ Done in CI.
+   **Waiting on the owner:** install the `.ipa` and confirm the app launches,
+   Settings shows "Core backend: xemu", and starting a game shows the status
+   line about system files. A crash at launch would point at constructors
+   that QEMU/GLib run when the app loads.
 5. **Point QEMU's code generator at Ember's JIT region.** TCG has a
    split-wx mode with a `vm_remap` path in `tcg/region.c`; on iOS the RX
    region must come from the debugger-script protocol
    (`Core/src/cpu/jit/jit_memory.cpp`), all of it allocated before the
-   script detaches.
-6. **Try to start the BIOS on the device** (interpreter first is not an
-   option in TCG; use the JIT path). The owner supplies the MCPX boot ROM,
-   a BIOS image and a hard-disk image on the device.
+   script detaches. `em_core_set_jit_region` in `xemu_backend.cpp` receives
+   the region and currently only remembers that it exists; pass it through
+   `ember-xemu.h` (and `extra_args`, e.g. `-accel tcg,split-wx=on,tb-size=N`).
+   Then set `kCodeGeneratorReady = true`.
+6. **Try to start the BIOS on the device.** The owner supplies the MCPX boot
+   ROM, a BIOS image and a hard-disk image in `Documents/Ember/System`. Ask
+   for `xemu-log.txt` after each attempt.
 
 ## How a build round works
 
-- Two workflows. `build.yml` builds the app and uploads
-  `Ember-unsigned-ipa`; it ignores changes under `Dependencies/` and
-  `docs/`. `deps.yml` runs only for `Dependencies/**` and does: library
-  build (cached by the hash of `build-ios-deps.sh`) → xemu configure →
-  xemu compile.
+- Two workflows. `deps.yml` ("iOS dependencies") runs only for
+  `Dependencies/**` and does: library build (cached by the hash of
+  `build-ios-deps.sh`) → DSP library (cached) → xemu configure → compile and
+  link → package → save `build-deps/xemu-lib` to the Actions cache
+  (`xemu-ios-lib-…`). `build.yml` ("Build") builds the app and uploads
+  `Ember-unsigned-ipa`; it ignores pushes that only touch `Dependencies/`
+  or `docs/`, restores the newest `xemu-ios-lib-` cache, and **runs again by
+  itself when "iOS dependencies" succeeds**. If the cache is gone (GitHub
+  evicts unused caches after 7 days) the app silently falls back to the
+  stub; the log line "linked backend:" says which one was linked. Re-run
+  "iOS dependencies" to get the cache back.
+- A push that changes both the app and `Dependencies/` builds the app twice:
+  at once with the previous libraries, and again after the new ones exist.
+  The second one is the one to install.
 - A round is: edit, commit, push, wait for the run, read the failed step's
   log with `gh run view <id> --log-failed`. A full `deps.yml` round takes
   roughly 10–15 minutes when the library cache hits.
