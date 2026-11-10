@@ -16,8 +16,8 @@ struct Game: Identifiable, Hashable {
 
     var formatLabel: String {
         switch format {
-        case .xbe: return "XBE"
-        case .xiso: return "ISO"
+        case .XBE: return "XBE"
+        case .XISO: return "ISO"
         case .folder: return "Folder"
         default: return "?"
         }
