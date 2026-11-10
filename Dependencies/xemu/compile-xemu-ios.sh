@@ -41,6 +41,10 @@ echo
 echo "==== linker output (if it got that far)"
 grep -E 'Undefined symbols|ld: |clang(\+\+)?: error' "$LOG" | sort | uniq -c | sort -rn | cut -c1-200 | head -40
 echo
+echo "==== link command, without the object files"
+awk '/^FAILED.*qemu-system-i386/ { getline; print; exit }' "$LOG" | tr ' ' '\n' | grep -vE '\.o$' | strip_paths | tr '\n' ' ' | cut -c1-6000
+echo
+echo
 echo "==== undefined symbols, each with the first object that needs it"
 awk '/", referenced from:/ { sym=$1; getline; sub(/^ +/, ""); print sym "  <-  " $0 }' "$LOG" | sort -u | cut -c1-200 | head -600
 echo

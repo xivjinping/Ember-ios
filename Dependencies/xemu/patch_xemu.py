@@ -85,9 +85,16 @@ edit("ui/meson.build",
      "if not host_ios\n  subdir('xui')\nendif\n")
 # The desktop front end (window, menus, SDL input, settings UI) stays out of
 # the iOS build. What the core still needs from it is supplied by Ember.
+# The parts with no window or OpenGL in them are kept as they are: settings
+# (the core reads its machine configuration from them), networking setup,
+# the monitor console and the widescreen flag.
 edit("ui/meson.build",
      "system_ss.add_all(xemu_ss)",
-     "if not host_ios\n  system_ss.add_all(xemu_ss)\nendif")
+     "if host_ios\n"
+     "  system_ss.add(files('xemu-settings.cc', 'xemu-net.c', 'xemu-monitor.c',\n"
+     "                      'xemu-widescreen.c'),\n"
+     "                sdl, tomlplusplus, genconfig)\n"
+     "else\n  system_ss.add_all(xemu_ss)\nendif")
 
 # --- 6. Let Meson find CMake when cross-compiling --------------------------------------
 # One of xemu's components (the vertex-shader CPU emulator) is a CMake
@@ -162,5 +169,13 @@ edit("hw/xbox/nv2a/pgraph/null/renderer.c",
 edit("hw/xbox/nv2a/pgraph/null/renderer.c",
      '        return r->blank_texture;\n    }\n\n    return 0;',
      '        return r->blank_texture;\n    }\n#else\n    (void)r;\n#endif\n\n    return 0;')
+
+# --- 11. zlib from the iOS SDK ---------------------------------------------------------------------
+# With CMake visible (edit 6), Meson asks CMake for zlib, and CMake answers
+# with the macOS SDK's copy, which cannot be linked into an iOS binary. The
+# "system" method links plain -lz, which resolves inside the iOS SDK.
+edit("meson.build",
+     "zlib = dependency('zlib', required: true)",
+     "zlib = dependency('zlib', required: true, method: host_ios ? 'system' : 'auto')")
 
 print(f"patch_xemu: {applied} edits applied")
