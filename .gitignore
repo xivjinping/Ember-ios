@@ -26,7 +26,3 @@ DerivedData/
 .DS_Store
 xcuserdata/
 *.swp
-
-# --- Dependency build output -------------------------------------------------
-Dependencies/ios/work/
-Dependencies/ios/prefix/

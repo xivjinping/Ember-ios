@@ -1,18 +1,17 @@
 name: iOS dependencies
 
-# Cross-compiles the third-party libraries the emulation core needs, for iOS
-# arm64. Separate from the app build so a dependency experiment does not break
-# the app, and vice versa.
+# Cross-compiles the engine's library dependencies for iOS. Separate from the
+# app build so that work on the port does not slow down every app change.
 
 on:
+  workflow_dispatch:
   push:
     paths:
-      - 'Dependencies/ios/**'
+      - 'Dependencies/**'
       - '.github/workflows/deps.yml'
-  workflow_dispatch:
 
 jobs:
-  glib:
+  deps:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,14 +19,18 @@ jobs:
       - name: Install build tools
         run: brew install meson ninja pkgconf
 
-      - name: Build GLib for iOS
-        run: Dependencies/ios/build-glib.sh
+      - name: Build
+        run: Dependencies/build-ios-deps.sh
 
-      - name: Package prefix
-        run: tar -czf ios-prefix.tar.gz -C Dependencies/ios prefix
+      - name: Show meson log on failure
+        if: failure()
+        run: |
+          for f in build-deps/*/meson-logs/meson-log.txt; do
+            [ -f "$f" ] && { echo "==== $f (last 150 lines)"; tail -150 "$f"; }
+          done
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ios-arm64-prefix
-          path: ios-prefix.tar.gz
+          name: ios-deps-prefix
+          path: build-deps/prefix
           if-no-files-found: error
