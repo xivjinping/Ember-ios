@@ -179,12 +179,15 @@ static void *ember_frame_thread(void *opaque)
                 fprintf(stderr, "ember: display: frame request %d took %lld ms\n", requests, (long long)ms);
             }
             requests++;
-            if (!qatomic_read(&ember_vk_frames)) {
-                /* Until the renderer delivers frames: the VGA path. */
-                bql_lock();
-                graphic_hw_update(ember_dcl.con);
-                bql_unlock();
-            }
+            /*
+             * Always: this is also what raises the guest's vblank interrupt
+             * (nv2a_vga_gfx_update), which the kernel waits on. Once the
+             * renderer delivers frames, ember_copy_surface() ignores the
+             * VGA picture it produces.
+             */
+            bql_lock();
+            graphic_hw_update(ember_dcl.con);
+            bql_unlock();
         }
         g_usleep(16000);
     }
