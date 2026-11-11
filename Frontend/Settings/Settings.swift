@@ -124,6 +124,7 @@ final class AppSettings: ObservableObject {
     @Published var vsync: Bool { didSet { defaults.set(vsync, forKey: "gfx.vsync") } }
     @Published var allow120Hz: Bool { didSet { defaults.set(allow120Hz, forKey: "gfx.120hz") } }
     @Published var asyncShaders: Bool { didSet { defaults.set(asyncShaders, forKey: "gfx.asyncShaders") } }
+    @Published var legacyDisplay: Bool { didSet { defaults.set(legacyDisplay, forKey: "gfx.legacyDisplay") } }
     @Published var precompileShaders: Bool { didSet { defaults.set(precompileShaders, forKey: "gfx.precompile") } }
 
     // Input and interface
@@ -166,6 +167,7 @@ final class AppSettings: ObservableObject {
         vsync = defaults.bool(forKey: "gfx.vsync")
         allow120Hz = defaults.bool(forKey: "gfx.120hz")
         asyncShaders = defaults.bool(forKey: "gfx.asyncShaders")
+        legacyDisplay = defaults.bool(forKey: "gfx.legacyDisplay")
         precompileShaders = defaults.bool(forKey: "gfx.precompile")
         controllerLayout = ControllerLayout(rawValue: defaults.string(forKey: "input.layout") ?? "") ?? .controllerS
         touchControlOpacity = defaults.double(forKey: "input.touchOpacity")
@@ -184,6 +186,7 @@ final class AppSettings: ObservableObject {
         config.renderScale = Float(renderScale.rawValue)
         config.vsync = vsync
         config.asyncShaders = asyncShaders
+        config.legacyDisplay = legacyDisplay
         return config
     }
 }

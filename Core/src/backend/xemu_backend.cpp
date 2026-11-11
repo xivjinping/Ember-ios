@@ -216,6 +216,7 @@ void em_core_start(em_core* core) {
     cfg.eeprom_path = eeprom.c_str();
     cfg.ram_mb = int(core->config.ram_mb);
     cfg.controllers = 1;
+    cfg.legacy_display = core->config.legacy_display ? 1 : 0;
     cfg.render_scale = int(std::lround(core->config.render_scale)); // xemu scales by whole numbers
     // Print the CPU state whenever the guest resets: a boot that goes wrong
     // usually shows up as a reset loop.

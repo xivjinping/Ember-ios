@@ -44,6 +44,7 @@ NS_SWIFT_NAME(CoreConfiguration)
 @property (nonatomic) float renderScale;
 @property (nonatomic) BOOL vsync;
 @property (nonatomic) BOOL asyncShaders;
+@property (nonatomic) BOOL legacyDisplay;
 @property (nonatomic, copy) NSURL *dataDirectory;
 @property (nonatomic, copy) NSURL *cacheDirectory;
 @end

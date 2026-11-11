@@ -51,6 +51,9 @@ static DisplaySurface *ember_surface;
 /* Set once the renderer delivers frames itself; the VGA copy then stops. */
 static bool ember_vk_frames;
 
+/* Read by the Vulkan renderer (patch_xemu.py): 0 = old path through guest VRAM. */
+int ember_display_from_renderer = 1;
+
 /* Internal resolution wanted by the app (1 = 640x480) and the one applied. */
 static int ember_scale_wanted = 1, ember_scale_applied = 1;
 static int ember_clamp_scale(int scale);
@@ -82,6 +85,9 @@ void ember_display_frame(const void *rgba, int width, int height)
         dst[i] = (p & 0x0000FF00u) | ((p >> 16) & 0xFFu) | ((p & 0xFFu) << 16) | 0xFF000000u;
     }
     frame_serial++;
+    if (!qatomic_read(&ember_vk_frames)) {
+        fprintf(stderr, "ember: display: first frame from the renderer, %dx%d\n", width, height);
+    }
     qatomic_set(&ember_vk_frames, true);
     pthread_mutex_unlock(&frame_lock);
 }
@@ -161,8 +167,18 @@ static void *ember_frame_thread(void *opaque)
                 bql_unlock();
                 ember_scale_applied = scale;
             }
+            static int requests;
+            int64_t t0 = g_get_monotonic_time();
+            if (requests < 3) {
+                fprintf(stderr, "ember: display: frame request %d\n", requests);
+            }
             nv2a_get_framebuffer_surface();
             nv2a_release_framebuffer_surface();
+            int64_t ms = (g_get_monotonic_time() - t0) / 1000;
+            if (requests < 3 || ms > 500) {
+                fprintf(stderr, "ember: display: frame request %d took %lld ms\n", requests, (long long)ms);
+            }
+            requests++;
             if (!qatomic_read(&ember_vk_frames)) {
                 /* Until the renderer delivers frames: the VGA path. */
                 bql_lock();
@@ -336,6 +352,9 @@ bool ember_xemu_start(const ember_xemu_config *c)
     g_config.display.renderer = CONFIG_DISPLAY_RENDERER_VULKAN;
     ember_scale_wanted = ember_scale_applied = ember_clamp_scale(c->render_scale);
     g_config.display.quality.surface_scale = ember_scale_applied;
+    ember_display_from_renderer = !c->legacy_display;
+    fprintf(stderr, "ember: display: %s, scale %d\n",
+            ember_display_from_renderer ? "from the renderer" : "old path (guest video memory)", ember_scale_applied);
     g_config.sys.mem_limit = c->ram_mb >= 128 ? CONFIG_SYS_MEM_LIMIT_128 : CONFIG_SYS_MEM_LIMIT_64;
     xemu_settings_set_string(&g_config.sys.files.bootrom_path, c->bootrom_path);
     xemu_settings_set_string(&g_config.sys.files.flashrom_path, c->flashrom_path);

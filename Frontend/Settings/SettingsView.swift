@@ -64,6 +64,7 @@ struct SettingsView: View {
             Toggle("Present at 120 Hz", isOn: $settings.allow120Hz)
             Toggle("Asynchronous shader compilation", isOn: $settings.asyncShaders)
             Toggle("Precompile cached shaders at boot", isOn: $settings.precompileShaders)
+            Toggle("Old picture path (always 640×480; applies on next game start)", isOn: $settings.legacyDisplay)
             Button("Clear Shader & Pipeline Caches", role: .destructive, action: clearCaches)
         } header: {
             Text("Graphics")

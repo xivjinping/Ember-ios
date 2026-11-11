@@ -26,6 +26,7 @@ typedef struct ember_xemu_config {
     int ram_mb;                /* 64 or 128 */
     int controllers;           /* gamepads plugged in at power-on, 0..4 */
     int render_scale;          /* internal resolution, 1 (640x480) .. 4 */
+    int legacy_display;        /* 1: picture from guest video memory, always 640x480 */
     const char *const *extra_args; /* further QEMU arguments, NULL-terminated, or NULL */
 } ember_xemu_config;
 

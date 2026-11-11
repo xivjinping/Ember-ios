@@ -99,6 +99,7 @@ static NSError *EMMakeError(NSInteger code, NSString *message) {
     cfg.render_scale  = configuration.renderScale;
     cfg.vsync         = configuration.vsync;
     cfg.async_shaders = configuration.asyncShaders;
+    cfg.legacy_display = configuration.legacyDisplay;
     cfg.data_dir      = configuration.dataDirectory.fileSystemRepresentation;
     cfg.cache_dir     = configuration.cacheDirectory.fileSystemRepresentation;
 

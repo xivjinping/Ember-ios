@@ -491,11 +491,32 @@ edit("hw/xbox/nv2a/pgraph/vk/display.c",
 edit_span("hw/xbox/nv2a/pgraph/vk/renderer.c",
      "#if HAVE_EXTERNAL_MEMORY\n    qemu_event_reset(&d->pgraph.sync_complete);",
      "    return 0;\n#endif\n",
+     "    extern int ember_display_from_renderer; /* ui/ember-core.c */\n"
+     "    if (!ember_display_from_renderer) {\n"
+     "        qemu_mutex_unlock(&d->pfifo.lock);\n"
+     "        pgraph_vk_wait_for_surface_download(surface);\n"
+     "        return 0;\n"
+     "    }\n"
      "    qemu_event_reset(&d->pgraph.sync_complete);\n"
      "    qatomic_set(&pg->sync_pending, true);\n"
      "    pfifo_kick(d);\n"
      "    qemu_mutex_unlock(&d->pfifo.lock);\n"
      "    qemu_event_wait(&d->pgraph.sync_complete);\n"
      "    return 0;\n")
+# Where a frame request goes, for the log (first few only).
+edit("hw/xbox/nv2a/pgraph/vk/renderer.c",
+     "    PGRAPHState *pg = &d->pgraph;\n    pgraph_vk_render_display(pg);\n",
+     "    PGRAPHState *pg = &d->pgraph;\n"
+     "    static int ember_syncs;\n"
+     "    if (ember_syncs < 3) fprintf(stderr, \"ember: display: sync %d begins\\n\", ember_syncs);\n"
+     "    pgraph_vk_render_display(pg);\n"
+     "    if (ember_syncs < 3) fprintf(stderr, \"ember: display: sync %d done\\n\", ember_syncs);\n"
+     "    ember_syncs++;\n")
+edit("hw/xbox/nv2a/pgraph/vk/display.c",
+     "    if (!disp->image || disp->width != width || disp->height != height) {\n"
+     "        create_display_image(pg, width, height);\n",
+     "    if (!disp->image || disp->width != width || disp->height != height) {\n"
+     "        fprintf(stderr, \"ember: display: display image %ux%u\\n\", width, height);\n"
+     "        create_display_image(pg, width, height);\n")
 
 print(f"patch_xemu: {applied} edits applied")

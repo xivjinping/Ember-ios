@@ -34,6 +34,7 @@ typedef struct {
     float       render_scale;  // 1.0 = 640x480 ... 4.5 = 2880x2160
     bool        vsync;         // pace the guest to its video refresh
     bool        async_shaders; // compile pipelines off-thread, skip draws until ready
+    bool        legacy_display; // xemu: picture from guest video memory (640x480) instead of the renderer
     const char* data_dir;      // HDD partitions, saves, EEPROM (Documents/Ember)
     const char* cache_dir;     // shader + pipeline caches (Library/Caches)
 } em_config;
