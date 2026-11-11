@@ -306,7 +306,9 @@ shutil.copy(Path(__file__).parent / "ember" / "vk-draw-ember.h",
 
 # b. no OpenGL interop
 edit("hw/xbox/nv2a/pgraph/vk/renderer.h",
-     "#define HAVE_EXTERNAL_MEMORY 1", "#define HAVE_EXTERNAL_MEMORY 0")
+     "#define HAVE_EXTERNAL_MEMORY 1",
+     "#include <epoxy/gl.h> /* Ember: the shim; only the GL type names used below */\n"
+     "#define HAVE_EXTERNAL_MEMORY 0")
 edit("hw/xbox/nv2a/pgraph/vk/renderer.c",
      '#include "gloffscreen.h"\n', '')
 edit("hw/xbox/nv2a/pgraph/vk/display.c",
