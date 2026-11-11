@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import QuartzCore
 
 /// Digital buttons. Raw values are the guest's XINPUT_GAMEPAD bits and must
 /// stay equal to the EM_PAD_* constants in Core/include/ember/core_api.h.
@@ -38,10 +39,41 @@ struct PadInput {
 /// display frame by the renderer.
 @MainActor
 final class InputMixer {
-    var virtualPad = PadInput() // on-screen controls
+    /// On-screen controls. A tap can begin and end between two display frames
+    /// (the main thread is busy), which would make the press invisible to the
+    /// guest. Every new press is therefore latched for `minimumHold` seconds.
+    var virtualPad = PadInput() {
+        didSet { latchNewPresses(from: oldValue, to: virtualPad) }
+    }
+
+    private static let minimumHold: CFTimeInterval = 0.07
+    private var buttonHold: [UInt16: CFTimeInterval] = [:]  // digital bit -> hold until
+    private var analogHold: [Int: CFTimeInterval] = [:]     // analog index -> hold until
+
+    private func latchNewPresses(from old: PadInput, to new: PadInput) {
+        let until = CACurrentMediaTime() + Self.minimumHold
+        let added = new.buttons.subtracting(old.buttons).rawValue
+        for bit in 0..<16 where added & (1 << bit) != 0 { buttonHold[1 << bit] = until }
+        for i in new.analog.indices where old.analog[i] == 0 && new.analog[i] > 0 { analogHold[i] = until }
+    }
+
+    /// The touch pad as the guest should see it right now: held controls plus
+    /// presses that were released too quickly to be sampled.
+    private func effectiveVirtualPad() -> PadInput {
+        let now = CACurrentMediaTime()
+        var pad = virtualPad
+        for (bit, until) in buttonHold {
+            if now < until { pad.buttons.insert(PadButtons(rawValue: bit)) } else { buttonHold[bit] = nil }
+        }
+        for (i, until) in analogHold {
+            if now < until { pad.analog[i] = 255 } else { analogHold[i] = nil }
+        }
+        return pad
+    }
 
     func snapshot(controller: PadInput?) -> em_pad_state {
         let physical = controller ?? PadInput()
+        let virtualPad = effectiveVirtualPad()
         var state = em_pad_state()
         state.buttons = virtualPad.buttons.union(physical.buttons).rawValue
 

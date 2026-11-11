@@ -180,3 +180,8 @@ Things to know:
   GPL. `LICENSE` (GPL-2.0) is already in the repository.
 - The app icon is original artwork (`scripts/make_icon.py`). Do not use
   console makers' logos or names in the app's branding.
+
+## 2026-11-11 (later): first play test
+
+Device report: runs at full speed, no sound glitches heard, sticks fine, touch buttons needed a very hard or long press.
+Cause (best guess, untested): a tap can start and end between two display frames, so `pushInput` never sees it. Fix: `InputMixer` latches every new touch press for 70 ms. Check on the device that taps now register.
