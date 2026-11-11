@@ -298,15 +298,9 @@ void em_core_get_stats(em_core* core, em_stats* out) {
     out->frame_width = core->frameWidth.load();
     out->frame_height = core->frameHeight.load();
 
-    // Frames the machine produced since the last call (about once a second).
-    const auto now = std::chrono::steady_clock::now();
-    const uint64_t serial = core->frameSerial.load();
-    const double seconds = std::chrono::duration<double>(now - core->statsTime).count();
-    if (seconds > 0.2) {
-        out->fps = double(serial - core->statsSerial) / seconds;
-        core->statsSerial = serial;
-        core->statsTime = now;
-    }
+    // The game's own frame rate (buffer flips), not how often the app copies
+    // the picture. This is the number that shows real speed.
+    out->fps = ember_xemu_game_fps();
 
     const int state = ember_xemu_state();
     out->recompiler_active = state == EMBER_XEMU_RUNNING;
@@ -316,8 +310,9 @@ void em_core_get_stats(em_core* core, em_stats* out) {
         std::snprintf(out->status, sizeof(out->status), "Building the console... (log: Ember/xemu-log.txt)");
         break;
     case EMBER_XEMU_RUNNING:
-        // The changing address shows the guest CPU is executing, whether or
-        // not there is a picture yet.
+        // Once the game draws, the picture is proof enough; until then the
+        // changing address shows the guest CPU is executing.
+        if (out->fps > 0) break;
         std::snprintf(out->status, sizeof(out->status), "Console running. CPU at 0x%08llX.",
                       static_cast<unsigned long long>(ember_xemu_guest_pc()));
         break;

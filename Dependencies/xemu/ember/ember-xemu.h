@@ -57,6 +57,8 @@ void ember_xemu_set_code_buffer(void *rx, void *rw, size_t size);
  */
 uint64_t ember_xemu_guest_pc(void);
 int ember_xemu_state(void);
+/* Frames per second the game presents; 0 when it is not presenting. */
+int ember_xemu_game_fps(void);
 void ember_xemu_set_paused(bool paused);
 void ember_xemu_request_stop(void);
 

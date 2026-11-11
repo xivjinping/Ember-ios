@@ -67,6 +67,8 @@ private struct RunningView: View {
     let onExit: () -> Void
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var controllers: ControllerManager
+    @State private var editingLayout = false
+    @State private var pausedForEditing = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -78,11 +80,17 @@ private struct RunningView: View {
             // A physical controller replaces the touch controls.
             if !controllers.isConnected {
                 VirtualGamePadView(input: session.input, layout: settings.controllerLayout,
-                                   opacity: settings.touchControlOpacity, haptics: settings.haptics)
+                                   opacity: editingLayout ? max(settings.touchControlOpacity, 0.6) : settings.touchControlOpacity,
+                                   haptics: settings.haptics, editing: editingLayout)
+            }
+
+            if editingLayout {
+                PadLayoutEditBar(store: PadLayoutStore.shared, onDone: finishEditing)
+                    .padding(.top, 6)
             }
 
             VStack(spacing: 6) {
-                toolbar
+                if !editingLayout { toolbar }
                 if EmulatorCore.backendName == "stub" {
                     VStack(spacing: 2) {
                         Text("Stub core: test pattern only. No engine is linked.")
@@ -99,7 +107,7 @@ private struct RunningView: View {
                         .padding(.horizontal, 60)
                 }
                 if settings.showStats, let stats = session.stats {
-                    Text(String(format: "%.0f fps · %@ · %ld MB RAM\n%@", stats.fps, session.cpuNote, Int(stats.ramMB),
+                    Text(String(format: "Game: %.0f fps · %@ · %ld MB RAM\n%@", stats.fps, session.cpuNote, Int(stats.ramMB),
                                 session.renderInfo))
                         .font(.caption2.monospacedDigit()).multilineTextAlignment(.center).padding(6)
                         .background(Color.black.opacity(0.55)).cornerRadius(6)
@@ -108,6 +116,21 @@ private struct RunningView: View {
             .foregroundColor(.white)
             .padding(.top, 6)
         }
+    }
+
+    /// The game pauses while the controls are moved, so nothing happens in it.
+    private func startEditing() {
+        pausedForEditing = !session.isPaused
+        if pausedForEditing { session.setPaused(true) }
+        PadLayoutStore.shared.selected = nil
+        editingLayout = true
+    }
+
+    private func finishEditing() {
+        editingLayout = false
+        PadLayoutStore.shared.selected = nil
+        if pausedForEditing { session.setPaused(false) }
+        pausedForEditing = false
     }
 
     private var toolbar: some View {
@@ -119,6 +142,11 @@ private struct RunningView: View {
                     Image(systemName: session.isPaused ? "play.fill" : "pause.fill")
                 }
                 .accessibilityLabel(session.isPaused ? "Resume" : "Pause")
+
+                if !controllers.isConnected {
+                    Button(action: startEditing) { Image(systemName: "hand.point.up.left") }
+                        .accessibilityLabel("Edit touch controls")
+                }
 
                 // Live graphics switches: each takes effect on the next frame.
                 Menu {
@@ -132,7 +160,7 @@ private struct RunningView: View {
                     Picker("Aspect", selection: $settings.aspect) {
                         ForEach(AspectMode.allCases) { Text($0.title).tag($0) }
                     }
-                    Toggle("Show statistics", isOn: $settings.showStats)
+                    Toggle("Show speed (fps)", isOn: $settings.showStats)
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "sparkles.tv")

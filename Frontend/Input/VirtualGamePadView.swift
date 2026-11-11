@@ -11,6 +11,9 @@ struct VirtualGamePadView: View {
     var layout: ControllerLayout
     var opacity: Double
     var haptics: Bool
+    /// While true the controls send no input and can be dragged and resized.
+    var editing: Bool = false
+    @ObservedObject private var store = PadLayoutStore.shared
 
     // The pad's own face-button colours.
     private static let green = Color(red: 0.30, green: 0.78, blue: 0.35)
@@ -28,8 +31,10 @@ struct VirtualGamePadView: View {
                 VStack {
                     HStack {
                         analogKey("LT", .leftTrigger, CGSize(width: unit * 1.6, height: unit * 0.75))
+                            .padEditable(.leftTrigger, editing: editing, store: store)
                         Spacer()
                         analogKey("RT", .rightTrigger, CGSize(width: unit * 1.6, height: unit * 0.75))
+                            .padEditable(.rightTrigger, editing: editing, store: store)
                     }
                     Spacer()
                 }
@@ -39,9 +44,12 @@ struct VirtualGamePadView: View {
                     Spacer()
                     HStack(alignment: .bottom, spacing: 8) {
                         StickView(diameter: unit * 2.1) { input.virtualPad.leftStick = $0 }
+                            .padEditable(.leftStick, editing: editing, store: store)
                         digitalKey("L3", .leftThumb, unit * 0.62)
+                            .padEditable(.leftThumb, editing: editing, store: store)
                     }
                     dpad(unit)
+                        .padEditable(.dpad, editing: editing, store: store)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -51,7 +59,9 @@ struct VirtualGamePadView: View {
                     faceCluster(unit)
                     HStack(alignment: .bottom, spacing: 8) {
                         digitalKey("R3", .rightThumb, unit * 0.62)
+                            .padEditable(.rightThumb, editing: editing, store: store)
                         StickView(diameter: unit * 1.7) { input.virtualPad.rightStick = $0 }
+                            .padEditable(.rightStick, editing: editing, store: store)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .trailing)
@@ -61,7 +71,9 @@ struct VirtualGamePadView: View {
                     Spacer()
                     HStack(spacing: 22) {
                         digitalKey("BACK", .back, unit * 0.62, wide: true)
+                            .padEditable(.back, editing: editing, store: store)
                         digitalKey("START", .start, unit * 0.62, wide: true)
+                            .padEditable(.start, editing: editing, store: store)
                     }
                 }
             }
@@ -86,9 +98,9 @@ struct VirtualGamePadView: View {
             analogKey("A", .a, CGSize(width: unit, height: unit), tint: Self.green)
         }
         return VStack(alignment: .trailing, spacing: 8) {
-            if layout == .duke { blackWhite }
-            diamond
-            if layout == .controllerS { blackWhite }
+            if layout == .duke { blackWhite.padEditable(.blackWhite, editing: editing, store: store) }
+            diamond.padEditable(.faceButtons, editing: editing, store: store)
+            if layout == .controllerS { blackWhite.padEditable(.blackWhite, editing: editing, store: store) }
         }
     }
 

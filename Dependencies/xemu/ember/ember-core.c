@@ -25,6 +25,8 @@
 #include "system/system.h"
 #include "system/runstate.h"
 #include "ui/console.h"
+#include "qemu/timer.h"
+#include "hw/xbox/nv2a/debug.h"
 
 #include "ui/xemu-settings.h"
 #include "ui/xemu-input.h"
@@ -305,6 +307,20 @@ bool ember_xemu_start(const ember_xemu_config *c)
 
     qemu_thread_create(&thread, "ember-machine", ember_machine_thread, NULL, QEMU_THREAD_DETACHED);
     return true;
+}
+
+/*
+ * Frames per second the game itself presents (nv2a buffer flips), measured
+ * by xemu's profiler. 0 when the game has not flipped for a second, so a
+ * hang or a loading screen does not keep showing the last value.
+ */
+int ember_xemu_game_fps(void)
+{
+    int64_t now = qemu_clock_get_us(QEMU_CLOCK_REALTIME);
+    if (g_nv2a_stats.last_flip_time == 0 || now - g_nv2a_stats.last_flip_time > 1000000) {
+        return 0;
+    }
+    return (int)g_nv2a_stats.increment_fps;
 }
 
 int ember_xemu_state(void)

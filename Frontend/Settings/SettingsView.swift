@@ -8,6 +8,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var acquiring = false
     @State private var logRevision = 0
+    @State private var editingLayout = false
 
     var body: some View {
         NavigationView {
@@ -30,6 +31,9 @@ struct SettingsView: View {
             }
         }
         .navigationViewStyle(.stack)
+        .fullScreenCover(isPresented: $editingLayout) {
+            PadLayoutEditorScreen().environmentObject(settings)
+        }
     }
 
     // MARK: Graphics
@@ -188,12 +192,14 @@ struct SettingsView: View {
                 Text("Touch control opacity: \(Int(settings.touchControlOpacity * 100))%")
                 Slider(value: $settings.touchControlOpacity, in: 0.15...1)
             }
+            Button("Edit touch control layout") { editingLayout = true }
             Toggle("Haptic feedback", isOn: $settings.haptics)
-            Toggle("Show statistics", isOn: $settings.showStats)
+            Toggle("Show speed (fps) while playing", isOn: $settings.showStats)
         } header: {
             Text("Input & Interface")
         } footer: {
-            Text("On modern controllers the left shoulder is White and the right shoulder is Black. "
+            Text("You can also edit the layout during a game with the hand button in the toolbar. "
+                 + "On modern controllers the left shoulder is White and the right shoulder is Black. "
                  + "Triggers are analog; face buttons report pressure where the controller supports it.")
         }
     }
