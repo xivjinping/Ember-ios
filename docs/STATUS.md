@@ -2,7 +2,7 @@
 
 Read this first when picking the project up in a new session. It says where
 things stand, what comes next, and how the build rounds work. Last updated
-2026-11-10 (the BIOS boots into the kernel on the device; no picture yet).
+2026-11-11 (Vulkan renderer on MoltenVK built; first picture test on the device pending).
 
 ## Goal
 
@@ -33,7 +33,7 @@ files are missing, that JIT is needed, or "Console running. CPU at 0x…".
 ## How the xemu side is put together
 
 xemu is fetched at the revision in `Dependencies/xemu/XEMU_COMMIT`, changed
-by `Dependencies/xemu/patch_xemu.py` (29 edits, each asserts the text it
+by `Dependencies/xemu/patch_xemu.py` (62 edits, each asserts the text it
 replaces, plus copies of the files in `Dependencies/xemu/ember/` into xemu's
 `ui/`), configured by `configure-xemu-ios.sh`, compiled and linked by
 `compile-xemu-ios.sh` (prints a grouped error summary) and packaged by
@@ -63,9 +63,8 @@ Things to know:
   System) and are recognised by size/extension, not name: the 512-byte boot
   ROM, a BIOS `.bin` of 256 KB/512 KB/1 MB, a `.qcow2` or `.img` hard disk.
   xemu writes `eeprom.bin` there itself.
-- The nv2a renderer is xemu's *null* renderer: nothing the GPU draws is
-  visible. Expect a black picture even when the BIOS runs; progress shows in
-  the log. A Metal renderer is a later stage.
+- The nv2a renderer is xemu's Vulkan renderer on MoltenVK (see step 7);
+  the null renderer is the fallback.
 - Audio: xemu's APU plays through SDL directly, not through
   `em_core_read_audio`. This may clash with the app's own audio session;
   look at it once the BIOS runs.
@@ -94,15 +93,40 @@ Things to know:
    the CPU address so far, so "kernel idling" vs "stuck" is still open.
    Add a log line when the app requests the stop, and log the PC a few times,
    to tell these apart next round.
-7. **A picture.** Biggest remaining piece; everything after it is much
-   easier to judge. Only xemu's *null* renderer is built, so the screen is
-   black. Candidate route: xemu's own Vulkan renderer over MoltenVK (Vulkan
-   on Metal) instead of a new Metal renderer, because it reuses all of
-   xemu's GPU emulation. First find out whether MoltenVK on this iPad offers
-   every Vulkan feature and extension that renderer requires; if not, the
-   alternative is a Metal renderer for nv2a. Then: build MoltenVK for iOS in
-   `build-ios-deps.sh` (invalidates the library cache), enable xemu's
-   Vulkan option, and present its output through `ember_xemu_lock_frame`.
+7. **A picture. Built (2026-11-11), not yet run on the device.**
+   Route taken: xemu's Vulkan renderer on MoltenVK v1.4.0, linked statically.
+   What had to change (all in `patch_xemu.py` section 11):
+   - `fetch-moltenvk-ios.sh` repacks MoltenVK's release as one object with
+     every symbol hidden except `ember_mvk_get_instance_proc_addr`, because
+     volk defines globals named like the Vulkan functions. volk is started
+     with `volkInitializeCustom`.
+   - No OpenGL interop (`HAVE_EXTERNAL_MEMORY 0`). The picture is *read back*:
+     `ember-core.c` runs a frame thread that calls
+     `nv2a_get_framebuffer_surface()` (downloads the displayed surface into
+     guest video memory) and then `graphic_hw_update()`, so the existing
+     display listener sees it. Slow but simple; sharing the Vulkan image
+     with the app's Metal view is the later optimisation. Video overlay
+     (pvideo) and upscaling live in the skipped display pass.
+   - **MoltenVK has no geometry shaders**, and this xemu revision uses one
+     for every triangle (it passes the triangle's three corners to the
+     fragment shader for exact depth). `pgraph_glsl_need_geom()` now returns
+     false; the fragment shader takes depth from `noperspective` varyings
+     (`vtxPos0` = position, `vtxPos1.x` = 1/w) and the polygon-offset slope
+     from `dFdx/dFdy`. Flat shading uses Vulkan's first-vertex rule only.
+     The start-up geometry-shader winding probe is skipped.
+   - Quads, quad strips, fans, polygons and line loops are expanded to
+     index lists on the CPU (`ember/vk-draw-ember.h`).
+   - `geometryShader` and `shaderTessellationAndGeometryPointSize` are not
+     required; unsupported formats are logged, not fatal; the two 838 MB
+     compute scratch buffers are 128 MB each; if Vulkan fails to start the
+     null renderer takes over (log line `ember: renderer: ...`).
+   **Waiting on the owner:** install the build, Enable JIT, start a game, send
+   a screenshot and `xemu-log.txt`. Look in the log for
+   `ember: renderer: Vulkan`, "required ... format not supported" lines,
+   MoltenVK shader conversion errors (`[mvk-error]`), and assertion text if
+   the app closes. Known weak spots: depth precision near the camera, flat
+   shading, anything MoltenVK rejects in the generated GLSL, memory use
+   (several large Vulkan buffers), speed of the read-back path.
 8. Audio through the app (xemu opens SDL audio itself; may clash with the
    app's AVAudioEngine), touch input check, creating the hard-disk image
    automatically when none is found, and showing a clear message when the
