@@ -48,11 +48,49 @@ static uint64_t frame_serial;
 static DisplayChangeListener ember_dcl;
 static DisplaySurface *ember_surface;
 
+/* Set once the renderer delivers frames itself; the VGA copy then stops. */
+static bool ember_vk_frames;
+
+/* Internal resolution wanted by the app (1 = 640x480) and the one applied. */
+static int ember_scale_wanted = 1, ember_scale_applied = 1;
+static int ember_clamp_scale(int scale);
+
+/*
+ * Called by the Vulkan renderer (vk-display-ember.h) with the displayed
+ * frame, RGBA, at the internal resolution. Stored as opaque BGRA.
+ */
+void ember_display_frame(const void *rgba, int width, int height)
+{
+    if (width <= 0 || height <= 0) {
+        return;
+    }
+    pthread_mutex_lock(&frame_lock);
+    if (width != frame_width || height != frame_height || !frame_bits) {
+        if (frame_image) {
+            pixman_image_unref(frame_image);
+            frame_image = NULL;
+        }
+        frame_bits = g_realloc(frame_bits, (size_t)width * height * 4);
+        frame_width = width;
+        frame_height = height;
+    }
+    const uint32_t *src = rgba;
+    uint32_t *dst = frame_bits;
+    size_t n = (size_t)width * height;
+    for (size_t i = 0; i < n; i++) {
+        uint32_t p = src[i]; /* bytes R,G,B,A -> B,G,R,A */
+        dst[i] = (p & 0x0000FF00u) | ((p >> 16) & 0xFFu) | ((p & 0xFFu) << 16) | 0xFF000000u;
+    }
+    frame_serial++;
+    qatomic_set(&ember_vk_frames, true);
+    pthread_mutex_unlock(&frame_lock);
+}
+
 /* Copies the whole guest surface, converting whatever format it has to BGRA. */
 static void ember_copy_surface(void)
 {
     DisplaySurface *s = ember_surface;
-    if (!s) {
+    if (!s || qatomic_read(&ember_vk_frames)) {
         return;
     }
     int w = surface_width(s), h = surface_height(s);
@@ -106,6 +144,7 @@ static const DisplayChangeListenerOps ember_dcl_ops = {
  */
 int nv2a_get_framebuffer_surface(void);
 void nv2a_release_framebuffer_surface(void);
+void nv2a_set_surface_scale_factor(unsigned int scale);
 bool nv2a_ember_renderer_ready(void); /* added to pgraph.c by patch_xemu.py */
 
 static QemuThread frame_thread;
@@ -115,11 +154,21 @@ static void *ember_frame_thread(void *opaque)
 {
     while (!qatomic_read(&frame_thread_stop)) {
         if (qatomic_read(&ember_state) == EMBER_XEMU_RUNNING && nv2a_ember_renderer_ready()) {
+            int scale = qatomic_read(&ember_scale_wanted);
+            if (scale != ember_scale_applied) {
+                bql_lock();
+                nv2a_set_surface_scale_factor(scale); /* drops the lock while it works */
+                bql_unlock();
+                ember_scale_applied = scale;
+            }
             nv2a_get_framebuffer_surface();
             nv2a_release_framebuffer_surface();
-            bql_lock();
-            graphic_hw_update(ember_dcl.con);
-            bql_unlock();
+            if (!qatomic_read(&ember_vk_frames)) {
+                /* Until the renderer delivers frames: the VGA path. */
+                bql_lock();
+                graphic_hw_update(ember_dcl.con);
+                bql_unlock();
+            }
         }
         g_usleep(16000);
     }
@@ -285,7 +334,8 @@ bool ember_xemu_start(const ember_xemu_config *c)
     g_config.general.show_welcome = false;
     /* Vulkan through MoltenVK; pgraph.c falls back to the null renderer if it cannot start. */
     g_config.display.renderer = CONFIG_DISPLAY_RENDERER_VULKAN;
-    g_config.display.quality.surface_scale = 1;
+    ember_scale_wanted = ember_scale_applied = ember_clamp_scale(c->render_scale);
+    g_config.display.quality.surface_scale = ember_scale_applied;
     g_config.sys.mem_limit = c->ram_mb >= 128 ? CONFIG_SYS_MEM_LIMIT_128 : CONFIG_SYS_MEM_LIMIT_64;
     xemu_settings_set_string(&g_config.sys.files.bootrom_path, c->bootrom_path);
     xemu_settings_set_string(&g_config.sys.files.flashrom_path, c->flashrom_path);
@@ -321,6 +371,17 @@ int ember_xemu_game_fps(void)
         return 0;
     }
     return (int)g_nv2a_stats.increment_fps;
+}
+
+static int ember_clamp_scale(int scale)
+{
+    return scale < 1 ? 1 : scale > 4 ? 4 : scale;
+}
+
+/* Changes the internal resolution; applied by the frame thread. */
+void ember_xemu_set_render_scale(int scale)
+{
+    qatomic_set(&ember_scale_wanted, ember_clamp_scale(scale));
 }
 
 int ember_xemu_state(void)

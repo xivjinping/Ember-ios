@@ -196,3 +196,9 @@ Cause (best guess, untested): a tap can start and end between two display frames
 
 - App icon: xemu's own icon (`ui/icons/xemu_512x512.png` from the pinned xemu checkout, part of the GPL-2.0 xemu project), scaled to 1024 with the corners filled in its dark green. `scripts/make_icon.py` still draws the old Ember flame if wanted.
 - Controller button pictures in `Resources/ControllerIcons/` (user-supplied SVG set, converted to 256 px PNG; RT made from LT). Black and White have none yet and keep text labels.
+
+## 2026-11-11 (later): internal resolution
+
+- The picture now comes from xemu's own display image instead of guest video memory: `ember/vk-display-ember.h` copies the Vulkan display image (already at the surface scale, with the video overlay plane composited) into a host buffer after each display pass, and `ember_display_frame()` in `ember-core.c` swizzles it to BGRA for the app. `pgraph_vk_get_framebuffer_surface` always uses the "sync" request now (patch section 12). The old VGA copy only runs until the first renderer frame arrives.
+- Settings → Internal resolution is 1×–4× (640×480 to 2560×1920), also in the in-game graphics menu; `ember_xemu_set_render_scale()` applies changes through `nv2a_set_surface_scale_factor` on the frame thread. Default 2×.
+- Untested on the device. Watch for: speed at 3× and 4× (the read-back copies up to 20 MB per frame), and whether colours/brightness changed (the display pass applies xemu's own output processing).

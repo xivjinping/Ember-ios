@@ -69,8 +69,8 @@ struct SettingsView: View {
             Text("Graphics")
         } footer: {
             Text("Resolution, upscaler, FXAA and aspect can also be changed while a game is running. "
-                 + "Rendering above your screen's own resolution costs GPU time and battery for no visible gain: "
-                 + "1440p and 4K are meant for iPad Pro and external displays. "
+                 + "Higher internal resolution makes the picture sharper and costs GPU time and battery; "
+                 + "turn on Show speed to see what your device keeps up with. "
                  + "iOS always presents in sync with the display, so V-Sync here controls guest pacing.")
         }
     }

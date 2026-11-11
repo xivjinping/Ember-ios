@@ -3,26 +3,25 @@ import SwiftUI
 
 /// Internal rendering resolution as a multiple of the console's 640×480.
 enum RenderScale: Double, CaseIterable, Identifiable {
-    case native = 1.0, hd720 = 1.5, hd1080 = 2.25, qhd1440 = 3.0, uhd4K = 4.5
+    // Whole numbers: the xemu renderer scales by integer factors.
+    case native = 1, x2 = 2, x3 = 3, x4 = 4
     var id: Double { rawValue }
     var width: Int { Int((640 * rawValue).rounded()) }
     var height: Int { Int((480 * rawValue).rounded()) }
     var title: String {
         switch self {
-        case .native: return "1× · 480p (native)"
-        case .hd720: return "1.5× · 720p"
-        case .hd1080: return "2.25× · 1080p"
-        case .qhd1440: return "3× · 1440p"
-        case .uhd4K: return "4.5× · 4K"
+        case .native: return "1× · 640×480 (native)"
+        case .x2: return "2× · 1280×960"
+        case .x3: return "3× · 1920×1440"
+        case .x4: return "4× · 2560×1920"
         }
     }
     var shortTitle: String {
         switch self {
-        case .native: return "480p"
-        case .hd720: return "720p"
-        case .hd1080: return "1080p"
-        case .qhd1440: return "1440p"
-        case .uhd4K: return "4K"
+        case .native: return "1×"
+        case .x2: return "2×"
+        case .x3: return "3×"
+        case .x4: return "4×"
         }
     }
 }
@@ -141,7 +140,7 @@ final class AppSettings: ObservableObject {
             "cpu.jitMethod": JITMethod.stikDebug.rawValue,
             "cpu.codeCacheMB": 64,
             // Older and smaller devices start at 720p; everything else at 1080p.
-            "gfx.scale": physicalMB < 5000 ? RenderScale.hd720.rawValue : RenderScale.hd1080.rawValue,
+            "gfx.scale": physicalMB < 5000 ? RenderScale.native.rawValue : RenderScale.x2.rawValue,
             "gfx.fxaa": false,
             "gfx.upscaler": Upscaler.bilinear.rawValue,
             "gfx.sharpness": 0.5,
@@ -159,7 +158,7 @@ final class AppSettings: ObservableObject {
         jitDebuggerAllocates = defaults.bool(forKey: "cpu.jitDebuggerAllocates")
         codeCacheMB = defaults.integer(forKey: "cpu.codeCacheMB")
         extendedRAM = defaults.bool(forKey: "mem.128")
-        renderScale = RenderScale(rawValue: defaults.double(forKey: "gfx.scale")) ?? .hd720
+        renderScale = RenderScale(rawValue: defaults.double(forKey: "gfx.scale")) ?? .x2
         fxaa = defaults.bool(forKey: "gfx.fxaa")
         upscaler = Upscaler(rawValue: defaults.string(forKey: "gfx.upscaler") ?? "") ?? .bilinear
         sharpness = defaults.double(forKey: "gfx.sharpness")

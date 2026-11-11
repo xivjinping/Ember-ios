@@ -25,6 +25,7 @@ typedef struct ember_xemu_config {
     const char *eeprom_path;   /* 256 bytes; generated when missing */
     int ram_mb;                /* 64 or 128 */
     int controllers;           /* gamepads plugged in at power-on, 0..4 */
+    int render_scale;          /* internal resolution, 1 (640x480) .. 4 */
     const char *const *extra_args; /* further QEMU arguments, NULL-terminated, or NULL */
 } ember_xemu_config;
 
@@ -57,6 +58,8 @@ void ember_xemu_set_code_buffer(void *rx, void *rw, size_t size);
  */
 uint64_t ember_xemu_guest_pc(void);
 int ember_xemu_state(void);
+/* Internal resolution, 1..4 times 640x480; may change while running. */
+void ember_xemu_set_render_scale(int scale);
 /* Frames per second the game presents; 0 when it is not presenting. */
 int ember_xemu_game_fps(void);
 void ember_xemu_set_paused(bool paused);

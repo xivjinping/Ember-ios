@@ -17,6 +17,7 @@
 
 #include "ember-xemu.h"
 
+#include <cmath>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -215,6 +216,7 @@ void em_core_start(em_core* core) {
     cfg.eeprom_path = eeprom.c_str();
     cfg.ram_mb = int(core->config.ram_mb);
     cfg.controllers = 1;
+    cfg.render_scale = int(std::lround(core->config.render_scale)); // xemu scales by whole numbers
     // Print the CPU state whenever the guest resets: a boot that goes wrong
     // usually shows up as a reset loop.
     static const char* const extraArgs[] = {"-d", "cpu_reset", nullptr};
@@ -241,8 +243,9 @@ void em_core_set_jit_region(em_core* core, void* rx, void* rw, size_t size) {
     core->jitAttached.store(rx && rw && size);
 }
 
-void em_core_set_render_scale(em_core*, float) {
-    // Internal resolution is a property of the renderer, which does not exist yet.
+void em_core_set_render_scale(em_core*, float scale) {
+    // Takes effect within a frame or two; xemu scales by whole numbers.
+    ember_xemu_set_render_scale(int(std::lround(scale)));
 }
 
 bool em_core_lock_frame(em_core* core, const uint8_t** bgra, uint32_t* width, uint32_t* height, uint64_t* serial) {

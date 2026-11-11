@@ -459,4 +459,43 @@ edit("hw/xbox/nv2a/pgraph/vk/draw.c",
      "            vkCmdDraw(r->command_buffer, index_count, 1, 0, 0);\n"
      "        }\n")
 
+# ---- 12. Display image to the app at the internal resolution -------------------
+#
+# xemu draws the displayed frame into a Vulkan image at the chosen surface
+# scale. On the desktop OpenGL shows that image; here it is copied to host
+# memory after each display pass (ember/vk-display-ember.h). The frame thread
+# asks for it through the same "sync" request the desktop build uses.
+shutil.copy(Path(__file__).parent / "ember" / "vk-display-ember.h",
+            root / "hw" / "xbox" / "nv2a" / "pgraph" / "vk" / "vk-display-ember.h")
+edit("hw/xbox/nv2a/pgraph/vk/display.c",
+     '#include <math.h>\n',
+     '#include <math.h>\n#include "vk-display-ember.h"\n')
+edit("hw/xbox/nv2a/pgraph/vk/display.c",
+     "VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,",
+     "VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |\n"
+     "                 VK_IMAGE_USAGE_TRANSFER_SRC_BIT,")
+edit("hw/xbox/nv2a/pgraph/vk/display.c",
+     "    pgraph_vk_transition_image_layout(pg, cmd, disp->image,\n"
+     "                                      VK_FORMAT_R8G8B8_UNORM,\n"
+     "                                      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,",
+     "    ember_display_record_copy(pg, cmd);\n\n"
+     "    pgraph_vk_transition_image_layout(pg, cmd, disp->image,\n"
+     "                                      VK_FORMAT_R8G8B8_UNORM,\n"
+     "                                      VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,")
+edit("hw/xbox/nv2a/pgraph/vk/display.c",
+     "    nv2a_profile_inc_counter(NV2A_PROF_QUEUE_SUBMIT_5);\n",
+     "    nv2a_profile_inc_counter(NV2A_PROF_QUEUE_SUBMIT_5);\n"
+     "    ember_display_deliver(pg);\n")
+# The frame thread's request renders the display (sync) instead of only
+# downloading the surface into guest memory.
+edit_span("hw/xbox/nv2a/pgraph/vk/renderer.c",
+     "#if HAVE_EXTERNAL_MEMORY\n    qemu_event_reset(&d->pgraph.sync_complete);",
+     "    return 0;\n#endif\n",
+     "    qemu_event_reset(&d->pgraph.sync_complete);\n"
+     "    qatomic_set(&pg->sync_pending, true);\n"
+     "    pfifo_kick(d);\n"
+     "    qemu_mutex_unlock(&d->pfifo.lock);\n"
+     "    qemu_event_wait(&d->pgraph.sync_complete);\n"
+     "    return 0;\n")
+
 print(f"patch_xemu: {applied} edits applied")
