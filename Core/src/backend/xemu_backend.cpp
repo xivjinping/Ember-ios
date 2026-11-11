@@ -316,9 +316,9 @@ void em_core_get_stats(em_core* core, em_stats* out) {
         std::snprintf(out->status, sizeof(out->status), "Building the console... (log: Ember/xemu-log.txt)");
         break;
     case EMBER_XEMU_RUNNING:
-        // There is no renderer yet, so the picture stays black; the changing
-        // address shows the guest CPU is executing.
-        std::snprintf(out->status, sizeof(out->status), "Console running. CPU at 0x%08llX. No picture yet (no renderer).",
+        // The changing address shows the guest CPU is executing, whether or
+        // not there is a picture yet.
+        std::snprintf(out->status, sizeof(out->status), "Console running. CPU at 0x%08llX.",
                       static_cast<unsigned long long>(ember_xemu_guest_pc()));
         break;
     case EMBER_XEMU_EXITED:
