@@ -74,7 +74,11 @@ if ! echo "$VISIBLE" | grep -q '_ember_mvk_get_instance_proc_addr'; then
     echo "error: the entry point is missing" >&2
     exit 1
 fi
-nm -m "$OUT/lib/libMoltenVK-ember.a" 2>/dev/null | grep -c 'private external _vk' | sed 's/^/hidden Vulkan functions: /'
+# MoltenVK's own functions must still be in there, just not visible.
+if ! nm -m "$OUT/lib/libMoltenVK-ember.a" 2>/dev/null | grep '_vkCreateInstance$' | head -3; then
+    echo "error: vkCreateInstance is not in the object at all" >&2
+    exit 1
+fi
 
 rm -rf "$WORK"
 ls -la "$OUT" "$OUT/lib" "$OUT/include"
