@@ -77,12 +77,17 @@ void ember_display_frame(const void *rgba, int width, int height)
         frame_width = width;
         frame_height = height;
     }
-    const uint32_t *src = rgba;
-    uint32_t *dst = frame_bits;
-    size_t n = (size_t)width * height;
-    for (size_t i = 0; i < n; i++) {
-        uint32_t p = src[i]; /* bytes R,G,B,A -> B,G,R,A */
-        dst[i] = (p & 0x0000FF00u) | ((p >> 16) & 0xFFu) | ((p & 0xFFu) << 16) | 0xFF000000u;
+    /*
+     * xemu's display shader draws upside down for OpenGL ("GL compat" in
+     * vk/display.c), so the rows are reversed here while converting.
+     */
+    for (int y = 0; y < height; y++) {
+        const uint32_t *src = (const uint32_t *)rgba + (size_t)(height - 1 - y) * width;
+        uint32_t *dst = frame_bits + (size_t)y * width;
+        for (int x = 0; x < width; x++) {
+            uint32_t p = src[x]; /* bytes R,G,B,A -> B,G,R,A */
+            dst[x] = (p & 0x0000FF00u) | ((p >> 16) & 0xFFu) | ((p & 0xFFu) << 16) | 0xFF000000u;
+        }
     }
     frame_serial++;
     if (!qatomic_read(&ember_vk_frames)) {
