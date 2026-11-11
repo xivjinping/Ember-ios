@@ -48,6 +48,8 @@ jobs:
   ipa:
     runs-on: macos-latest
     needs: core-tests
+    permissions:
+      contents: write   # to publish the "latest" release
     env:
       # Secrets cannot be tested in a step's `if:` directly, so reduce them to a flag here.
       HAS_SIGNING: ${{ secrets.BUILD_CERTIFICATE_BASE64 != '' && secrets.PROVISIONING_PROFILE_BASE64 != '' }}
@@ -99,7 +101,9 @@ jobs:
           # keep the ones the user's profile allows.
           ldid -SResources/Ember.entitlements "$APP/Ember"
           # Printed so the log shows what was linked without downloading the .ipa.
-          if nm "$APP/Ember" 2>/dev/null | grep -q ' _ember_xemu_state$'; then echo "linked backend: xemu"; else echo "linked backend: stub"; fi
+          if nm "$APP/Ember" 2>/dev/null | grep -q ' _ember_xemu_state$'; then BACKEND=xemu; else BACKEND=stub; fi
+          echo "linked backend: $BACKEND"
+          echo "LINKED_BACKEND=$BACKEND" >> "$GITHUB_ENV"
           ls -la "$APP/Ember"
           mkdir -p unsigned/Payload
           cp -R "$APP" unsigned/Payload/
@@ -110,6 +114,24 @@ jobs:
           name: Ember-unsigned-ipa
           path: Ember-unsigned.ipa
           if-no-files-found: error
+
+      # One fixed download link for the newest build of main:
+      #   https://github.com/<owner>/<repo>/releases/download/latest/Ember-unsigned.ipa
+      # Only builds with the xemu backend replace it, so a stub build never
+      # overwrites a working one.
+      - name: Publish to the "latest" release
+        if: >-
+          github.ref == 'refs/heads/main' && env.LINKED_BACKEND == 'xemu' &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+           github.event_name == 'workflow_run')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release delete latest --cleanup-tag --yes 2>/dev/null || true
+          gh release create latest Ember-unsigned.ipa \
+            --target "$GITHUB_SHA" --prerelease --title "Latest build" \
+            --notes "Newest build of main ($(git rev-parse --short HEAD), $(date -u '+%Y-%m-%d %H:%M UTC')). Unsigned: install with AltStore, SideStore or Sideloadly."
 
       # ---- Signed build (only when secrets are configured) -----------------
       - name: Install certificate and provisioning profile
