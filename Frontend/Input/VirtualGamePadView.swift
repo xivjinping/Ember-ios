@@ -127,6 +127,32 @@ struct VirtualGamePadView: View {
     }
 }
 
+/// Custom button pictures: PNGs in Resources/ControllerIcons, named after
+/// the button (A.png, LT.png, BACK.png, UP.png ...). A missing file keeps
+/// the drawn text label.
+enum ControllerIcons {
+    private static var cache: [String: UIImage?] = [:]
+
+    static func fileName(for label: String) -> String {
+        switch label {
+        case "▲": return "UP"
+        case "▼": return "DOWN"
+        case "◀": return "LEFT"
+        case "▶": return "RIGHT"
+        default: return label
+        }
+    }
+
+    static func image(for label: String) -> UIImage? {
+        let name = fileName(for: label)
+        if let cached = cache[name] { return cached }
+        let image = Bundle.main.path(forResource: name, ofType: "png", inDirectory: "ControllerIcons")
+            .flatMap { UIImage(contentsOfFile: $0) }
+        cache[name] = image
+        return image
+    }
+}
+
 /// A button that reports press and release. A zero-distance drag gesture is
 /// used instead of Button so the press registers on touch-down, not touch-up.
 private struct PadKey: View {
@@ -139,9 +165,7 @@ private struct PadKey: View {
 
     var body: some View {
         let radius = min(size.width, size.height) / 2
-        Text(label)
-            .font(.system(size: min(size.width, size.height) * (label.count > 2 ? 0.30 : 0.40), weight: .bold, design: .rounded))
-            .foregroundColor(.white)
+        face
             .frame(width: size.width, height: size.height)
             .background(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
@@ -164,6 +188,20 @@ private struct PadKey: View {
             )
             .accessibilityLabel(Text(label))
             .accessibilityAddTraits(.isButton)
+    }
+
+    @ViewBuilder
+    private var face: some View {
+        if let image = ControllerIcons.image(for: label) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .padding(min(size.width, size.height) * 0.12)
+        } else {
+            Text(label)
+                .font(.system(size: min(size.width, size.height) * (label.count > 2 ? 0.30 : 0.40), weight: .bold, design: .rounded))
+                .foregroundColor(.white)
+        }
     }
 }
 

@@ -37,6 +37,8 @@ targets:
       - path: Core/include
         buildPhase: none
       - path: Resources/Assets.xcassets   # app icon (regenerate with scripts/make_icon.py)
+      - path: Resources/ControllerIcons   # optional button pictures (see its README)
+        type: folder
     # Chooses the emulation backend: the stub, or xemu when its libraries
     # have been built into build-deps/xemu-lib (see Config/Backend.xcconfig).
     configFiles:
