@@ -31,6 +31,19 @@ def edit(relative, old, new, count=1):
     applied += 1
 
 
+def edit_span(relative, start, end, new):
+    """Replaces everything from `start` through `end` (both included)."""
+    global applied
+    path = root / relative
+    text = path.read_text()
+    a = text.find(start)
+    b = text.find(end, a) if a >= 0 else -1
+    if a < 0 or b < 0:
+        sys.exit(f"patch_xemu: {relative}: span not found:\n{start}\n...\n{end}")
+    path.write_text(text[:a] + new + text[b + len(end):])
+    applied += 1
+
+
 # --- 1. Know when the target is iOS -------------------------------------------
 # Meson reports iOS as 'darwin', the same as macOS, so ask the compiler.
 edit("meson.build",
@@ -106,8 +119,8 @@ edit("configure",
      '  echo "cmake = [\'cmake\']" >> $cross\n')
 
 # --- 7. No OpenGL renderer on iOS ----------------------------------------------------------
-# The offscreen-GL helper and the OpenGL renderer (with its GLSL generator)
-# need desktop OpenGL through SDL. The Vulkan renderer is already optional.
+# The offscreen-GL helper and the OpenGL renderer need desktop OpenGL through
+# SDL. The GLSL generator is kept: the Vulkan renderer uses it (section 11).
 edit("hw/xbox/nv2a/pgraph/thirdparty/meson.build",
      "libgloffscreen = static_library(",
      "if host_ios\n  gloffscreen = not_found\nelse\nlibgloffscreen = static_library(")
@@ -116,7 +129,7 @@ edit("hw/xbox/nv2a/pgraph/thirdparty/meson.build",
      "include_directories: ['gloffscreen'])\nendif\n")
 edit("hw/xbox/nv2a/pgraph/meson.build",
      "subdir('gl')\nsubdir('glsl')\n",
-     "if not host_ios\n  subdir('gl')\n  subdir('glsl')\nendif\n")
+     "if not host_ios\n  subdir('gl')\nendif\nsubdir('glsl')\n")
 
 # --- 8. JIT write protection ----------------------------------------------------------------
 # On macOS, QEMU flips a per-thread switch between writing and executing JIT
@@ -264,5 +277,184 @@ edit("tcg/region.c",
      "            /* Guard pages are nice for bug detection but are not essential. */",
      "        if (have_prot != 0 && !ember_code_size) {\n"
      "            /* Guard pages are nice for bug detection but are not essential. */")
+
+# --- 11. The Vulkan renderer on MoltenVK ------------------------------------------------------
+# iOS has no Vulkan; MoltenVK implements it on Metal. fetch-moltenvk-ios.sh
+# puts its headers and a static library (with every Vulkan symbol hidden but
+# one entry point, so they cannot clash with volk's) in build-deps/moltenvk.
+# The renderer then needs four kinds of change:
+#   a. build: where Vulkan comes from on iOS;
+#   b. no OpenGL interop: the picture is read back, not shared with GL;
+#   c. no geometry shaders (Metal has none): depth comes from interpolated
+#      values, and quads/fans are expanded on the CPU (ember/vk-draw-ember.h);
+#   d. device requirements that MoltenVK cannot meet are not demanded.
+MVK = Path(__file__).resolve().parent.parent.parent / "build-deps" / "moltenvk"
+mvk_link = ", ".join(f"'{a}'" for a in (
+    [str(MVK / "lib" / "libMoltenVK-ember.a")] +
+    [f"-Wl,-framework,{f}" for f in ("Metal", "Foundation", "QuartzCore", "CoreGraphics", "IOSurface", "UIKit")]))
+
+# a. build
+edit("meson.build",
+     "elif host_os == 'linux'\n  vulkan = dependency('vulkan')\nendif\n",
+     "elif host_os == 'linux'\n  vulkan = dependency('vulkan')\n"
+     "elif host_ios\n"
+     f"  vulkan = declare_dependency(compile_args: ['-I{MVK / 'include'}'],\n"
+     f"                              link_args: [{mvk_link}])\n"
+     "endif\n")
+shutil.copy(Path(__file__).parent / "ember" / "vk-draw-ember.h",
+            root / "hw" / "xbox" / "nv2a" / "pgraph" / "vk" / "vk-draw-ember.h")
+
+# b. no OpenGL interop
+edit("hw/xbox/nv2a/pgraph/vk/renderer.h",
+     "#define HAVE_EXTERNAL_MEMORY 1", "#define HAVE_EXTERNAL_MEMORY 0")
+edit("hw/xbox/nv2a/pgraph/vk/renderer.c",
+     '#include "gloffscreen.h"\n', '')
+edit("hw/xbox/nv2a/pgraph/vk/display.c",
+     "    const GLint gl_internal_format = GL_RGBA8;\n", "")
+edit("hw/xbox/nv2a/pgraph/vk/display.c",
+     "    image_create_info.pNext = &external_memory_image_create_info;\n",
+     "    (void)external_memory_image_create_info;\n")
+edit("hw/xbox/nv2a/pgraph/vk/display.c",
+     "    alloc_info.pNext = &export_memory_alloc_info;\n",
+     "    (void)export_memory_alloc_info;\n")
+edit("hw/xbox/nv2a/pgraph/vk/instance.c",
+     "static char const *const required_device_extensions[] = {\n#ifdef WIN32\n",
+     "static char const *const required_device_extensions[] = {\n"
+     "    NULL, /* Ember: none; the external memory extensions were for OpenGL interop */\n"
+     "#if 0\n#elif defined(WIN32)\n")
+edit("hw/xbox/nv2a/pgraph/vk/instance.c",
+     "    VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,\n"
+     "    VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,\n#endif\n",
+     "#endif\n")
+edit("hw/xbox/nv2a/pgraph/vk/instance.c",
+     "                          ARRAY_SIZE(required_device_extensions));\n\n"
+     "    g_array_append_vals(extensions, required_device_extensions,\n"
+     "                        ARRAY_SIZE(required_device_extensions));\n",
+     "                          ARRAY_SIZE(required_device_extensions));\n")
+edit("hw/xbox/nv2a/pgraph/vk/instance.c",
+     "    for (int i = 0; i < ARRAY_SIZE(required_device_extensions); i++) {\n",
+     "    for (int i = 0; i < 0; i++) {\n")
+
+# MoltenVK is linked in; there is no Vulkan loader library to open.
+edit("hw/xbox/nv2a/pgraph/vk/instance.c",
+     "    result = volkInitialize();\n",
+     "    extern PFN_vkVoidFunction ember_mvk_get_instance_proc_addr(VkInstance, const char *);\n"
+     "    volkInitializeCustom((PFN_vkGetInstanceProcAddr)ember_mvk_get_instance_proc_addr);\n"
+     "    result = VK_SUCCESS;\n")
+
+# d. device requirements
+edit("hw/xbox/nv2a/pgraph/vk/instance.c",
+     "        F(geometryShader, true),", "        F(geometryShader, false),")
+edit("hw/xbox/nv2a/pgraph/vk/instance.c",
+     "        F(shaderTessellationAndGeometryPointSize, true),",
+     "        F(shaderTessellationAndGeometryPointSize, false),")
+# A missing format is reported but no longer rules the device out: there is
+# only one device, and the log says which format to deal with.
+edit("hw/xbox/nv2a/pgraph/vk/instance.c",
+     "           check_device_support_required_extensions(device) &&\n"
+     "           check_device_support_required_formats(device);\n",
+     "           check_device_support_required_extensions(device) &&\n"
+     "           (check_device_support_required_formats(device), true);\n")
+# Two 838 MB scratch buffers are sized for 10x rendering scale.
+edit("hw/xbox/nv2a/pgraph/vk/buffer.c",
+     "        .buffer_size = (1024 * 10) * (1024 * 10) * 8,",
+     "        .buffer_size = 4096 * 4096 * 8,")
+# If Vulkan cannot start, keep the console running without a picture.
+edit("hw/xbox/nv2a/pgraph/pgraph.c",
+     "    // FIXME: Try others\n",
+     "    g_config.display.renderer = CONFIG_DISPLAY_RENDERER_NULL;\n"
+     "    if (attempt_renderer_init(pg)) {\n"
+     "        fprintf(stderr, \"ember: the Vulkan renderer could not start; no picture (null renderer)\\n\");\n"
+     "        return;\n"
+     "    }\n")
+edit("hw/xbox/nv2a/pgraph/pgraph.c",
+     "void pgraph_init_thread(NV2AState *d)\n{\n    init_renderer(&d->pgraph);\n}\n",
+     "static bool ember_renderer_ready;\n\n"
+     "bool nv2a_ember_renderer_ready(void);\n"
+     "bool nv2a_ember_renderer_ready(void)\n{\n"
+     "    return qatomic_read(&ember_renderer_ready);\n}\n\n"
+     "void pgraph_init_thread(NV2AState *d)\n{\n    init_renderer(&d->pgraph);\n"
+     "    fprintf(stderr, \"ember: renderer: %s\\n\", d->pgraph.renderer->name);\n"
+     "    qatomic_set(&ember_renderer_ready, true);\n}\n")
+
+# c. no geometry shaders
+edit("hw/xbox/nv2a/pgraph/glsl/geom.c",
+     "bool pgraph_glsl_need_geom(const GeomState *state)\n{\n",
+     "bool pgraph_glsl_need_geom(const GeomState *state)\n{\n"
+     "    return false; /* Ember: Metal has no geometry shaders */\n\n")
+# The start-up probe measures how the driver orders vertices handed to a
+# geometry shader.
+edit("hw/xbox/nv2a/pgraph/vk/gpuprops.c",
+     "void pgraph_vk_determine_gpu_properties(NV2AState *d)\n{\n",
+     "void pgraph_vk_determine_gpu_properties(NV2AState *d)\n{\n    return;\n\n")
+# Depth. The geometry shader gave the fragment shader the triangle's three
+# corners so it could compute exact depth itself. Without it, two of those
+# outputs carry values that the rasteriser interpolates linearly across the
+# screen instead: vtxPos0 the position (z is linear on screen) and vtxPos1
+# 1/w (also linear on screen, and w is what a w-buffer stores). The slope
+# used for polygon offset comes from screen-space derivatives.
+edit("hw/xbox/nv2a/pgraph/glsl/common.c",
+     '        { flat_s,      vec4_s,  "vtxPos0" },\n'
+     '        { flat_s,      vec4_s,  "vtxPos1" },\n',
+     '        { "noperspective ", vec4_s,  "vtxPos0" },\n'
+     '        { "noperspective ", vec4_s,  "vtxPos1" },\n')
+edit("hw/xbox/nv2a/pgraph/glsl/vsh.c",
+     '                   "  vtxPos1 = vtxPos;\\n"\n',
+     '                   "  vtxPos1 = vec4(1.0 / vtxPos.w);\\n"\n')
+edit_span("hw/xbox/nv2a/pgraph/glsl/psh.c",
+     '            "precise float bc0 = area(unscaled_xy, vtxPos1.xy, vtxPos2.xy);\\n"',
+     '            "precise float zvalue = vtxPos0.w + (bc1*(vtxPos1.w - vtxPos0.w) + bc2*(vtxPos2.w - vtxPos0.w));\\n"',
+     '            "float emberInvW = vtxPos1.x;\\n"\n'
+     '            "float emberMZ = max(abs(dFdx(emberInvW)), abs(dFdy(emberInvW))) * float(surfaceScale.x);\\n"\n'
+     '            "precise float zvalue = 1.0 / emberInvW;\\n"')
+edit("hw/xbox/nv2a/pgraph/glsl/psh.c",
+     "depthFactor*triMZ*zvalue*zvalue", "depthFactor*emberMZ*zvalue*zvalue")
+edit_span("hw/xbox/nv2a/pgraph/glsl/psh.c",
+     '            "precise float bc0 = area(unscaled_xy, vtxPos1.xy, vtxPos2.xy);\\n"',
+     '            "precise float zvalue = vtxPos0.z + (bc1*(vtxPos1.z - vtxPos0.z) + bc2*(vtxPos2.z - vtxPos0.z));\\n"',
+     '            "float emberMZ = max(abs(dFdx(vtxPos0.z)), abs(dFdy(vtxPos0.z))) * float(surfaceScale.x);\\n"\n'
+     '            "precise float zvalue = vtxPos0.z;\\n"')
+edit("hw/xbox/nv2a/pgraph/glsl/psh.c",
+     '"zvalue += depthFactor*triMZ;\\n"', '"zvalue += depthFactor*emberMZ;\\n"')
+
+# Primitive types Metal lacks become triangle lists (ember/vk-draw-ember.h).
+edit("hw/xbox/nv2a/pgraph/vk/draw.c",
+     "    case PRIM_TYPE_TRIANGLE_FAN:\n        return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN;\n"
+     "    case PRIM_TYPE_QUADS:\n        return VK_PRIMITIVE_TOPOLOGY_LINE_LIST_WITH_ADJACENCY;\n"
+     "    case PRIM_TYPE_QUAD_STRIP:\n        return VK_PRIMITIVE_TOPOLOGY_LINE_STRIP_WITH_ADJACENCY;\n"
+     "    case PRIM_TYPE_POLYGON:\n",
+     "    case PRIM_TYPE_TRIANGLE_FAN:\n    case PRIM_TYPE_QUADS:\n    case PRIM_TYPE_QUAD_STRIP:\n"
+     "    case PRIM_TYPE_POLYGON:\n        return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;\n"
+     "    case PRIM_TYPE_INVALID:\n")
+edit("hw/xbox/nv2a/pgraph/vk/draw.c",
+     "void pgraph_vk_flush_draw(NV2AState *d)\n{\n",
+     '#include "vk-draw-ember.h"\n\nvoid pgraph_vk_flush_draw(NV2AState *d)\n{\n')
+edit("hw/xbox/nv2a/pgraph/vk/draw.c",
+     "    r->num_vertex_ram_buffer_syncs = 0;\n\n    if (pg->draw_arrays_length) {\n",
+     "    r->num_vertex_ram_buffer_syncs = 0;\n    ember_prims_begin(pg);\n\n    if (pg->draw_arrays_length) {\n")
+edit("hw/xbox/nv2a/pgraph/vk/draw.c",
+     "        begin_pre_draw(pg);\n",
+     "        begin_pre_draw(pg);\n        ember_prims_upload(pg);\n", count=4)
+edit("hw/xbox/nv2a/pgraph/vk/draw.c",
+     "            vkCmdDraw(r->command_buffer, count, 1, start, 0);\n",
+     "            if (!ember_prims_draw(pg, i)) {\n"
+     "                vkCmdDraw(r->command_buffer, count, 1, start, 0);\n"
+     "            }\n")
+edit("hw/xbox/nv2a/pgraph/vk/draw.c",
+     "        vkCmdDrawIndexed(r->command_buffer, pg->inline_elements_length, 1, 0, 0,\n"
+     "                         0);\n",
+     "        if (!ember_prims_draw(pg, 0)) {\n"
+     "            vkCmdDrawIndexed(r->command_buffer, pg->inline_elements_length, 1, 0, 0, 0);\n"
+     "        }\n")
+edit("hw/xbox/nv2a/pgraph/vk/draw.c",
+     "        vkCmdDraw(r->command_buffer, pg->inline_buffer_length, 1, 0, 0);\n",
+     "        if (!ember_prims_draw(pg, 0)) {\n"
+     "            vkCmdDraw(r->command_buffer, pg->inline_buffer_length, 1, 0, 0);\n"
+     "        }\n")
+edit("hw/xbox/nv2a/pgraph/vk/draw.c",
+     "        vkCmdDraw(r->command_buffer, index_count, 1, 0, 0);\n",
+     "        if (!ember_prims_draw(pg, 0)) {\n"
+     "            vkCmdDraw(r->command_buffer, index_count, 1, 0, 0);\n"
+     "        }\n")
 
 print(f"patch_xemu: {applied} edits applied")

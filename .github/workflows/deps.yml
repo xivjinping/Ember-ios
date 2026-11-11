@@ -78,6 +78,27 @@ jobs:
           path: build-deps/dsp56300
           key: ios-dsp56300-${{ hashFiles('Dependencies/xemu/build-dsp56300-ios.sh') }}
 
+      # Vulkan for iOS: MoltenVK's release, repacked for static linking.
+      - name: Restore MoltenVK cache
+        id: moltenvk
+        uses: actions/cache/restore@v4
+        with:
+          path: build-deps/moltenvk
+          key: ios-moltenvk-${{ hashFiles('Dependencies/xemu/fetch-moltenvk-ios.sh') }}
+
+      - name: Fetch MoltenVK for iOS
+        if: steps.moltenvk.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: Dependencies/xemu/fetch-moltenvk-ios.sh
+
+      - name: Save MoltenVK cache
+        if: steps.moltenvk.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build-deps/moltenvk
+          key: ios-moltenvk-${{ hashFiles('Dependencies/xemu/fetch-moltenvk-ios.sh') }}
+
       - name: Configure xemu for iOS
         run: Dependencies/xemu/configure-xemu-ios.sh
 

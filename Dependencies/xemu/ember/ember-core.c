@@ -83,18 +83,46 @@ static void ember_gfx_update(DisplayChangeListener *dcl, int x, int y, int w, in
     ember_copy_surface();
 }
 
-/* Called by QEMU's display timer: ask the video device to redraw. */
-static void ember_refresh(DisplayChangeListener *dcl)
-{
-    graphic_hw_update(dcl->con);
-}
-
 static const DisplayChangeListenerOps ember_dcl_ops = {
     .dpy_name = "ember",
     .dpy_gfx_switch = ember_gfx_switch,
     .dpy_gfx_update = ember_gfx_update,
-    .dpy_refresh = ember_refresh,
 };
+
+/*
+ * The frame thread: about 60 times a second, bring the picture up to date.
+ *
+ * What the guest's GPU drew lives in the renderer (Vulkan images). Asking
+ * for the framebuffer surface makes the renderer copy the displayed image
+ * back into guest video memory; QEMU's VGA code then turns video memory into
+ * the display surface, which ember_gfx_update() copies for the app. xemu's
+ * desktop UI shows the renderer's image directly instead; that is a later
+ * optimisation here.
+ *
+ * The first call must be made without the big QEMU lock, because the GPU
+ * thread it waits for takes that lock at times. The second needs the lock.
+ */
+int nv2a_get_framebuffer_surface(void);
+void nv2a_release_framebuffer_surface(void);
+bool nv2a_ember_renderer_ready(void); /* added to pgraph.c by patch_xemu.py */
+
+static QemuThread frame_thread;
+static bool frame_thread_started, frame_thread_stop;
+
+static void *ember_frame_thread(void *opaque)
+{
+    while (!qatomic_read(&frame_thread_stop)) {
+        if (qatomic_read(&ember_state) == EMBER_XEMU_RUNNING && nv2a_ember_renderer_ready()) {
+            nv2a_get_framebuffer_surface();
+            nv2a_release_framebuffer_surface();
+            bql_lock();
+            graphic_hw_update(ember_dcl.con);
+            bql_unlock();
+        }
+        g_usleep(16000);
+    }
+    return NULL;
+}
 
 bool ember_xemu_lock_frame(const uint8_t **bgra, uint32_t *width, uint32_t *height, uint64_t *serial)
 {
@@ -163,7 +191,8 @@ static void ember_display_init(DisplayState *ds, DisplayOptions *o)
     ember_dcl.ops = &ember_dcl_ops;
     ember_dcl.con = con;
     register_displaychangelistener(&ember_dcl);
-    update_displaychangelistener(&ember_dcl, 16); /* ms between redraws */
+    qemu_thread_create(&frame_thread, "ember-frame", ember_frame_thread, NULL, QEMU_THREAD_JOINABLE);
+    frame_thread_started = true;
 
     for (int i = 0; i < ember_controllers; i++) {
         ember_plug_gamepad(i);
@@ -223,6 +252,14 @@ static void *ember_machine_thread(void *opaque)
     qatomic_set(&ember_state, EMBER_XEMU_RUNNING);
     int status = qemu_main_loop();
     fprintf(stderr, "ember: main loop returned %d\n", status);
+    /* The frame thread uses the GPU emulation, which cleanup tears down. */
+    qatomic_set(&ember_state, EMBER_XEMU_STARTING);
+    if (frame_thread_started) {
+        qatomic_set(&frame_thread_stop, true);
+        bql_unlock();
+        qemu_thread_join(&frame_thread);
+        bql_lock();
+    }
     qemu_cleanup(status);
     qatomic_set(&ember_state, EMBER_XEMU_EXITED);
     return NULL;
@@ -244,7 +281,9 @@ bool ember_xemu_start(const ember_xemu_config *c)
     xemu_settings_set_path(c->settings_path);
     xemu_settings_load();
     g_config.general.show_welcome = false;
-    g_config.display.renderer = CONFIG_DISPLAY_RENDERER_NULL; /* the only one built for iOS so far */
+    /* Vulkan through MoltenVK; pgraph.c falls back to the null renderer if it cannot start. */
+    g_config.display.renderer = CONFIG_DISPLAY_RENDERER_VULKAN;
+    g_config.display.quality.surface_scale = 1;
     g_config.sys.mem_limit = c->ram_mb >= 128 ? CONFIG_SYS_MEM_LIMIT_128 : CONFIG_SYS_MEM_LIMIT_64;
     xemu_settings_set_string(&g_config.sys.files.bootrom_path, c->bootrom_path);
     xemu_settings_set_string(&g_config.sys.files.flashrom_path, c->flashrom_path);

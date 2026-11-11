@@ -19,6 +19,15 @@ SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 TARGET="-arch arm64 -isysroot $SDK -miphoneos-version-min=$MIN_IOS"
 # Stand-ins for desktop-only headers (OpenGL types); see shims/.
 SHIMS="-I$HERE/shims"
+# Vulkan headers and library (Dependencies/xemu/fetch-moltenvk-ios.sh). The
+# headers go on every compile line because xemu's bundled Vulkan helper
+# libraries (volk and friends) expect to find them like system headers.
+MOLTENVK="$WORK/moltenvk"
+if [ ! -f "$MOLTENVK/lib/libMoltenVK-ember.a" ]; then
+    echo "error: $MOLTENVK not prepared; run Dependencies/xemu/fetch-moltenvk-ios.sh" >&2
+    exit 1
+fi
+SHIMS="$SHIMS -I$MOLTENVK/include"
 
 # A pinned, pristine checkout every time: patches are applied to known text.
 if [ ! -d "$SRC/.git" ]; then
