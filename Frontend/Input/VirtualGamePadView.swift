@@ -30,10 +30,10 @@ struct VirtualGamePadView: View {
                 // Triggers
                 VStack {
                     HStack {
-                        analogKey("LT", .leftTrigger, CGSize(width: unit * 1.6, height: unit * 0.75))
+                        analogKey("LT", .leftTrigger, triggerSize("LT", unit))
                             .padEditable(.leftTrigger, editing: editing, store: store)
                         Spacer()
-                        analogKey("RT", .rightTrigger, CGSize(width: unit * 1.6, height: unit * 0.75))
+                        analogKey("RT", .rightTrigger, triggerSize("RT", unit))
                             .padEditable(.rightTrigger, editing: editing, store: store)
                     }
                     Spacer()
@@ -43,7 +43,7 @@ struct VirtualGamePadView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Spacer()
                     HStack(alignment: .bottom, spacing: 8) {
-                        StickView(diameter: unit * 2.1) { input.virtualPad.leftStick = $0 }
+                        StickView(diameter: unit * 2.1, knob: ControllerIcons.image(for: "LSTICK")) { input.virtualPad.leftStick = $0 }
                             .padEditable(.leftStick, editing: editing, store: store)
                         digitalKey("L3", .leftThumb, unit * 0.62)
                             .padEditable(.leftThumb, editing: editing, store: store)
@@ -60,7 +60,7 @@ struct VirtualGamePadView: View {
                     HStack(alignment: .bottom, spacing: 8) {
                         digitalKey("R3", .rightThumb, unit * 0.62)
                             .padEditable(.rightThumb, editing: editing, store: store)
-                        StickView(diameter: unit * 1.7) { input.virtualPad.rightStick = $0 }
+                        StickView(diameter: unit * 1.7, knob: ControllerIcons.image(for: "RSTICK")) { input.virtualPad.rightStick = $0 }
                             .padEditable(.rightStick, editing: editing, store: store)
                     }
                 }
@@ -81,6 +81,15 @@ struct VirtualGamePadView: View {
             .padding(.vertical, 10)
         }
         .opacity(opacity)
+    }
+
+    /// A wide text key, or the shape of the picture when there is one.
+    private func triggerSize(_ label: String, _ unit: CGFloat) -> CGSize {
+        if let image = ControllerIcons.image(for: label), image.size.height > 0 {
+            let height = unit * 1.15
+            return CGSize(width: height * image.size.width / image.size.height, height: height)
+        }
+        return CGSize(width: unit * 1.6, height: unit * 0.75)
     }
 
     private func faceCluster(_ unit: CGFloat) -> some View {
@@ -165,13 +174,18 @@ private struct PadKey: View {
 
     var body: some View {
         let radius = min(size.width, size.height) / 2
+        let image = ControllerIcons.image(for: label)
         face
             .frame(width: size.width, height: size.height)
-            .background(
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill(tint.opacity(pressed ? 0.60 : 0.22))
-                    .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(tint.opacity(0.75), lineWidth: 1.5))
-            )
+            .scaleEffect(image != nil && pressed ? 0.9 : 1)
+            .brightness(image != nil && pressed ? -0.25 : 0)
+            .background(Group {
+                if image == nil {
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .fill(tint.opacity(pressed ? 0.60 : 0.22))
+                        .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(tint.opacity(0.75), lineWidth: 1.5))
+                }
+            })
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -196,7 +210,6 @@ private struct PadKey: View {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFit()
-                .padding(min(size.width, size.height) * 0.12)
         } else {
             Text(label)
                 .font(.system(size: min(size.width, size.height) * (label.count > 2 ? 0.30 : 0.40), weight: .bold, design: .rounded))
@@ -208,6 +221,7 @@ private struct PadKey: View {
 /// Analog stick: drag anywhere inside the ring; output is -1...1 with up = +y.
 private struct StickView: View {
     let diameter: CGFloat
+    var knob: UIImage? = nil   // RSTICK.png / LSTICK.png, if provided
     let onChange: (CGPoint) -> Void
     @State private var offset = CGSize.zero
 
@@ -217,9 +231,15 @@ private struct StickView: View {
         ZStack {
             Circle().fill(Color.white.opacity(0.10))
             Circle().stroke(Color.white.opacity(0.45), lineWidth: 1.5)
-            Circle().fill(Color.white.opacity(0.40))
-                .frame(width: radius * 0.9, height: radius * 0.9)
-                .offset(offset)
+            Group {
+                if let knob = knob {
+                    Image(uiImage: knob).resizable().scaledToFit()
+                } else {
+                    Circle().fill(Color.white.opacity(0.40))
+                }
+            }
+            .frame(width: radius * 0.9, height: radius * 0.9)
+            .offset(offset)
         }
         .frame(width: diameter, height: diameter)
         .contentShape(Circle())

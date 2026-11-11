@@ -8,7 +8,8 @@ File names (case matters):
     A.png  B.png  X.png  Y.png  BLK.png  WHT.png
     LT.png  RT.png  L3.png  R3.png  BACK.png  START.png
     UP.png  DOWN.png  LEFT.png  RIGHT.png
+    LSTICK.png  RSTICK.png   (the moving knob of each stick)
 
 Square images with a transparent background look best, about 256×256.
-The button's coloured circle is still drawn behind the picture.
+A button with a picture is drawn as the picture alone; it dims when pressed.
 Use your own artwork, not Microsoft's controller graphics.
