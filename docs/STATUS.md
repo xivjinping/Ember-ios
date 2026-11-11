@@ -185,3 +185,9 @@ Things to know:
 
 Device report: runs at full speed, no sound glitches heard, sticks fine, touch buttons needed a very hard or long press.
 Cause (best guess, untested): a tap can start and end between two display frames, so `pushInput` never sees it. Fix: `InputMixer` latches every new touch press for 70 ms. Check on the device that taps now register.
+
+## 2026-11-11 (later): speed readout and layout editor
+
+- The stats overlay ("Show speed (fps)") now shows the game's own frame rate: `ember_xemu_game_fps()` reads xemu's `g_nv2a_stats.increment_fps` (buffer flips), 0 after a second without a flip. The "CPU at" status line hides once the game draws.
+- Touch layout editor (`Frontend/Input/PadLayout.swift`): every control can be dragged and resized, in game (hand button, pauses the game) or from Settings. Saved in UserDefaults `input.padLayout`. Not yet tested on the device.
+- No-JIT mode, not done: QEMU's interpreter (TCI) is a build-time choice (`--enable-tcg-interpreter`), so it cannot be a switch inside the same app. It would need a second app build ("Ember without JIT") with its own deps cache, and the `tcg/region.c` patch would need a plain buffer instead of the JIT region. Expect it to be many times slower than JIT. Waiting on the user's go-ahead.
