@@ -2,7 +2,7 @@
 
 Read this first when picking the project up in a new session. It says where
 things stand, what comes next, and how the build rounds work. Last updated
-2026-11-11 (Vulkan renderer on MoltenVK built; first picture test on the device pending).
+2026-11-11 (first game renders in-game on the device).
 
 ## Goal
 
@@ -93,7 +93,7 @@ Things to know:
    the CPU address so far, so "kernel idling" vs "stuck" is still open.
    Add a log line when the app requests the stop, and log the PC a few times,
    to tell these apart next round.
-7. **A picture. Built (2026-11-11), not yet run on the device.**
+7. **A picture. Works on the device (2026-11-11).**
    Route taken: xemu's Vulkan renderer on MoltenVK v1.4.0, linked statically.
    What had to change (all in `patch_xemu.py` section 11):
    - `fetch-moltenvk-ios.sh` repacks MoltenVK's release as one object with
@@ -120,13 +120,17 @@ Things to know:
      required; unsupported formats are logged, not fatal; the two 838 MB
      compute scratch buffers are 128 MB each; if Vulkan fails to start the
      null renderer takes over (log line `ember: renderer: ...`).
-   **Waiting on the owner:** install the build, Enable JIT, start a game, send
-   a screenshot and `xemu-log.txt`. Look in the log for
-   `ember: renderer: Vulkan`, "required ... format not supported" lines,
-   MoltenVK shader conversion errors (`[mvk-error]`), and assertion text if
-   the app closes. Known weak spots: depth precision near the camera, flat
-   shading, anything MoltenVK rejects in the generated GLSL, memory use
-   (several large Vulkan buffers), speed of the read-back path.
+   **Result on the iPad Air M2:** Red Dead Revolver boots through the BIOS
+   into gameplay (tutorial scene: terrain, character, HUD, text and the
+   controller overlay all drawn correctly in the owner's screenshot). Log:
+   MoltenVK 1.4.0 on "Apple M2 GPU", `ember: renderer: Vulkan`, no format
+   or shader errors. Only `VK_EXT_custom_border_color` is missing (texture
+   borders fall back), and MoltenVK prints "Metal does not support
+   disabling primitive restart" once per pipeline (harmless, but it floods
+   the log; silence it by setting `primitiveRestartEnable` on iOS).
+   Not yet known: real game speed (the overlay's "fps" counts display
+   copies, not game frames), sound, whether touch input reaches the game,
+   depth glitches in other scenes, other titles.
 8. Audio through the app (xemu opens SDL audio itself; may clash with the
    app's AVAudioEngine), touch input check, creating the hard-disk image
    automatically when none is found, and showing a clear message when the
