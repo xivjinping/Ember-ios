@@ -49,7 +49,6 @@ struct VirtualGamePadView: View {
                             .padEditable(.leftThumb, editing: editing, store: store)
                     }
                     dpad(unit)
-                        .padEditable(.dpad, editing: editing, store: store)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -95,30 +94,30 @@ struct VirtualGamePadView: View {
     private func faceCluster(_ unit: CGFloat) -> some View {
         let small = CGSize(width: unit * 0.62, height: unit * 0.62)
         let blackWhite = HStack(spacing: 10) {
-            analogKey("WHT", .white, small, tint: .white)
-            analogKey("BLK", .black, small, tint: Color(white: 0.35))
+            analogKey("WHT", .white, small, tint: .white).padEditable(.white, editing: editing, store: store)
+            analogKey("BLK", .black, small, tint: Color(white: 0.35)).padEditable(.black, editing: editing, store: store)
         }
         let diamond = VStack(spacing: 2) {
-            analogKey("Y", .y, CGSize(width: unit, height: unit), tint: Self.yellow)
+            analogKey("Y", .y, CGSize(width: unit, height: unit), tint: Self.yellow).padEditable(.y, editing: editing, store: store)
             HStack(spacing: unit * 0.9) {
-                analogKey("X", .x, CGSize(width: unit, height: unit), tint: Self.blue)
-                analogKey("B", .b, CGSize(width: unit, height: unit), tint: Self.red)
+                analogKey("X", .x, CGSize(width: unit, height: unit), tint: Self.blue).padEditable(.x, editing: editing, store: store)
+                analogKey("B", .b, CGSize(width: unit, height: unit), tint: Self.red).padEditable(.b, editing: editing, store: store)
             }
-            analogKey("A", .a, CGSize(width: unit, height: unit), tint: Self.green)
+            analogKey("A", .a, CGSize(width: unit, height: unit), tint: Self.green).padEditable(.a, editing: editing, store: store)
         }
         return VStack(alignment: .trailing, spacing: 8) {
-            if layout == .duke { blackWhite.padEditable(.blackWhite, editing: editing, store: store) }
-            diamond.padEditable(.faceButtons, editing: editing, store: store)
-            if layout == .controllerS { blackWhite.padEditable(.blackWhite, editing: editing, store: store) }
+            if layout == .duke { blackWhite }
+            diamond
+            if layout == .controllerS { blackWhite }
         }
     }
 
     private func dpad(_ unit: CGFloat) -> some View {
         let s = unit * 0.82
         return VStack(spacing: 2) {
-            digitalKey("▲", .dpadUp, s)
-            HStack(spacing: s) { digitalKey("◀", .dpadLeft, s); digitalKey("▶", .dpadRight, s) }
-            digitalKey("▼", .dpadDown, s)
+            digitalKey("▲", .dpadUp, s).padEditable(.dpadUp, editing: editing, store: store)
+            HStack(spacing: s) { digitalKey("◀", .dpadLeft, s).padEditable(.dpadLeft, editing: editing, store: store); digitalKey("▶", .dpadRight, s).padEditable(.dpadRight, editing: editing, store: store) }
+            digitalKey("▼", .dpadDown, s).padEditable(.dpadDown, editing: editing, store: store)
         }
     }
 

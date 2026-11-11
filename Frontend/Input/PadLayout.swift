@@ -3,8 +3,10 @@ import SwiftUI
 /// The movable parts of the touch controller.
 enum PadControl: String, CaseIterable, Codable {
     case leftTrigger, rightTrigger
-    case leftStick, leftThumb, dpad
-    case faceButtons, blackWhite, rightStick, rightThumb
+    case leftStick, leftThumb
+    case dpadUp, dpadDown, dpadLeft, dpadRight
+    case a, b, x, y, black, white
+    case rightStick, rightThumb
     case back, start
 
     var title: String {
@@ -13,9 +15,16 @@ enum PadControl: String, CaseIterable, Codable {
         case .rightTrigger: return "Right trigger"
         case .leftStick: return "Left stick"
         case .leftThumb: return "L3"
-        case .dpad: return "D-pad"
-        case .faceButtons: return "A B X Y"
-        case .blackWhite: return "Black / White"
+        case .dpadUp: return "D-pad up"
+        case .dpadDown: return "D-pad down"
+        case .dpadLeft: return "D-pad left"
+        case .dpadRight: return "D-pad right"
+        case .a: return "A"
+        case .b: return "B"
+        case .x: return "X"
+        case .y: return "Y"
+        case .black: return "Black"
+        case .white: return "White"
         case .rightStick: return "Right stick"
         case .rightThumb: return "R3"
         case .back: return "Back"
