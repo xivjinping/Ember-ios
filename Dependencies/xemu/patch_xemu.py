@@ -285,6 +285,20 @@ edit("tcg/region.c",
      "    flags = MAP_PRIVATE | MAP_ANONYMOUS;\n"
      "#if defined(CONFIG_DARWIN) && !defined(CONFIG_TCG_INTERPRETER)\n")
 
+# This xemu revision handles every op through the TCGOutOp tables; the
+# native backends keep tcg_out_op() as an unreachable stub, which the
+# interpreter backend lost. Without it the TCI build does not link.
+edit("tcg/tci/tcg-target.c.inc",
+     "static bool tcg_out_qemu_st_slow_path(TCGContext *s, TCGLabelQemuLdst *l)\n"
+     "{\n    g_assert_not_reached();\n}\n",
+     "static bool tcg_out_qemu_st_slow_path(TCGContext *s, TCGLabelQemuLdst *l)\n"
+     "{\n    g_assert_not_reached();\n}\n"
+     "\n"
+     "static inline void tcg_out_op(TCGContext *s, TCGOpcode opc, TCGType type,\n"
+     "                              const TCGArg args[TCG_MAX_OP_ARGS],\n"
+     "                              const int const_args[TCG_MAX_OP_ARGS])\n"
+     "{\n    g_assert_not_reached();\n}\n")
+
 # --- 11. The Vulkan renderer on MoltenVK ------------------------------------------------------
 # iOS has no Vulkan; MoltenVK implements it on Metal. fetch-moltenvk-ios.sh
 # puts its headers and a static library (with every Vulkan symbol hidden but
