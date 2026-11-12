@@ -19,6 +19,13 @@ on:
 jobs:
   deps:
     runs-on: macos-latest
+    # jit: the normal app. nojit: TCG's interpreter, for the "Ember NoJIT" app.
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [jit, nojit]
+    env:
+      EMBER_XEMU_VARIANT: ${{ matrix.variant }}
     steps:
       - uses: actions/checkout@v4
 
@@ -55,7 +62,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ios-deps-prefix
+          name: ios-deps-prefix-${{ matrix.variant }}
           path: build-deps/prefix
           if-no-files-found: error
 
@@ -114,12 +121,12 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: build-deps/xemu-lib
-          key: xemu-ios-lib-${{ hashFiles('Dependencies/**') }}-${{ github.run_id }}
+          key: xemu-ios-lib-${{ matrix.variant }}-${{ hashFiles('Dependencies/**') }}-${{ github.run_id }}
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: xemu-compile-log
+          name: xemu-compile-log-${{ matrix.variant }}
           path: build-deps/xemu-compile.log
           if-no-files-found: ignore
 

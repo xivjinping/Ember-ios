@@ -52,7 +52,9 @@ struct LibraryView: View {
                         .accessibilityLabel("Rescan")
                     Button(action: { showImporter = true }) { Image(systemName: "plus") }
                         .accessibilityLabel("Add games")
+#if !EMBER_NOJIT
                     jitButton
+#endif
                 }
             }
         }

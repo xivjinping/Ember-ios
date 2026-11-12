@@ -7,5 +7,10 @@
 // app links xemu instead (Core/src/backend/xemu_backend.cpp).
 EMBER_XEMU_LDFLAGS =
 EMBER_XEMU_DEFS =
+// The no-JIT build (EMBER_XEMU_VARIANT=nojit) overrides these so it installs
+// next to the normal app.
+EMBER_SWIFT_CONDITIONS =
+EMBER_BUNDLE_ID = app.ember.Ember
+EMBER_DISPLAY_NAME = Ember
 
 #include? "../build-deps/xemu-lib/ember-xemu.xcconfig"

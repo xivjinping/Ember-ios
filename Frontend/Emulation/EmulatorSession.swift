@@ -36,6 +36,9 @@ final class EmulatorSession: ObservableObject {
         guard !started else { return }
         started = true
 
+#if EMBER_NOJIT
+        cpuNote = "Interpreter (no-JIT build)"
+#else
         if settings.preferRecompiler {
             if await jit.acquire(settings: settings), JITSupport.attachCodeCache(to: core) {
                 cpuNote = "Recompiler"
@@ -43,6 +46,7 @@ final class EmulatorSession: ObservableObject {
                 cpuNote = "Interpreter (JIT unavailable: \(jit.statusText))"
             }
         }
+#endif
 
         core.start()
         do { try audio.start(core: core) } catch { audioError = error.localizedDescription }

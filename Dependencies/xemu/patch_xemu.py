@@ -278,6 +278,13 @@ edit("tcg/region.c",
      "        if (have_prot != 0 && !ember_code_size) {\n"
      "            /* Guard pages are nice for bug detection but are not essential. */")
 
+# The interpreter (no-JIT) build allocates its bytecode buffer as ordinary
+# memory; iOS refuses MAP_JIT to an app without JIT.
+edit("tcg/region.c",
+     "    flags = MAP_PRIVATE | MAP_ANONYMOUS;\n#ifdef CONFIG_DARWIN\n",
+     "    flags = MAP_PRIVATE | MAP_ANONYMOUS;\n"
+     "#if defined(CONFIG_DARWIN) && !defined(CONFIG_TCG_INTERPRETER)\n")
+
 # --- 11. The Vulkan renderer on MoltenVK ------------------------------------------------------
 # iOS has no Vulkan; MoltenVK implements it on Metal. fetch-moltenvk-ios.sh
 # puts its headers and a static library (with every Vulkan symbol hidden but

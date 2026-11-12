@@ -188,12 +188,14 @@ void em_core_start(em_core* core) {
         core->setStatus("Put these in Files > Ember > Ember > System: " + missing);
         return;
     }
-    // QEMU has no interpreter for this: without executable memory it would
+#if !defined(EMBER_XEMU_TCI)
+    // This build has no interpreter: without executable memory QEMU would
     // fail inside qemu_init and end the app.
     if (!core->jitAttached.load()) {
         core->setStatus("JIT is not active. Close the game, tap Enable JIT in the library (and keep Recompiler on in Settings), then start again.");
         return;
     }
+#endif
 
     // Everything QEMU and xemu print goes to a file the user can send.
     const std::string log = (core->dataDir / "xemu-log.txt").string();
@@ -240,6 +242,11 @@ void em_core_stop(em_core* core) {
 void em_core_set_jit_region(em_core* core, void* rx, void* rw, size_t size) {
     // QEMU's code generator writes through rw and the CPU runs from rx.
     if (!core) return;
+#if defined(EMBER_XEMU_TCI)
+    // The interpreter build runs bytecode from ordinary memory.
+    (void)rx; (void)rw; (void)size;
+    return;
+#endif
     ember_xemu_set_code_buffer(rx, rw, size);
     core->jitAttached.store(rx && rw && size);
 }

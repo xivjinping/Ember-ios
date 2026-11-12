@@ -205,3 +205,10 @@ Cause (best guess, untested): a tap can start and end between two display frames
 - Fixed: the first device test of the renderer picture path showed a black screen with the kernel stuck at 0x80018030. The frame thread had stopped calling `graphic_hw_update()` once renderer frames arrived, but that call is also what raises the guest's vblank interrupt (`nv2a_vga_gfx_update` in nv2a.c). It is now called every frame again.
 - Fixed: renderer picture was upside down (xemu's display shader flips Y for OpenGL); `ember_display_frame()` reverses the rows. Device report before the fix: works, picture flipped.
 - Device report (renderer picture, flip fixed): 1× and 2× both about 45 fps, 4× about 17 fps. 2× is free, so it stays the default. Likely cost at 4×: CPU work per frame (read-back of ~20 MB, row flip and colour swizzle, then the app's texture upload) on top of 16× the pixels on the GPU. Next speed step: hand the frame to Metal without the CPU passes (flip and swizzle in the present shader, share the read-back memory with a Metal buffer).
+
+## 2026-11-12: no-JIT app ("Ember NoJIT")
+
+- `EMBER_XEMU_VARIANT=nojit` builds xemu with `--enable-tcg-interpreter` (TCI: TCG runs bytecode from ordinary memory, like UTM SE). `deps.yml` builds both variants (matrix); caches `xemu-ios-lib-jit-*` and `xemu-ios-lib-nojit-*`.
+- The nojit `ember-xemu.xcconfig` sets `EMBER_XEMU_TCI=1` (backend skips the JIT check and ignores the JIT region), Swift condition `EMBER_NOJIT` (no JIT handshake, no Enable JIT button), bundle ID `app.ember.Ember.nojit`, name "Ember NoJIT", so it installs next to the normal app with its own Documents (system files must be copied there too).
+- patch_xemu: no `MAP_JIT` for the TCI code buffer (iOS refuses it without JIT).
+- `build.yml` job `ipa-nojit` publishes `Ember-NoJIT-unsigned.ipa` to the same "latest" release (`.github/publish-latest.sh` now uploads with --clobber instead of recreating the release).

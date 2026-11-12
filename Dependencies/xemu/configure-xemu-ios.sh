@@ -14,6 +14,12 @@ SRC="$WORK/src/xemu"
 BUILD="$WORK/xemu-build"
 MIN_IOS="15.0"
 COMMIT="$(tr -d '[:space:]' < "$HERE/XEMU_COMMIT")"
+# jit (default): TCG writes native code into Ember's JIT region.
+# nojit: TCG's bytecode interpreter (TCI), for devices without JIT. Much slower.
+VARIANT="${EMBER_XEMU_VARIANT:-jit}"
+TCI_FLAG=""
+if [ "$VARIANT" = "nojit" ]; then TCI_FLAG="--enable-tcg-interpreter"; fi
+echo "xemu variant: $VARIANT"
 
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 TARGET="-arch arm64 -isysroot $SDK -miphoneos-version-min=$MIN_IOS"
@@ -65,7 +71,7 @@ cd "$BUILD"
     --extra-cxxflags="$TARGET -I$PREFIX/include $SHIMS" \
     --extra-objcflags="$TARGET -I$PREFIX/include $SHIMS" \
     --extra-ldflags="$TARGET -L$PREFIX/lib" \
-    --enable-tcg \
+    --enable-tcg $TCI_FLAG \
     --enable-pixman \
     --enable-slirp \
     --disable-werror \

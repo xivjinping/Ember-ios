@@ -69,7 +69,7 @@ jobs:
         with:
           path: build-deps/xemu-lib
           key: xemu-ios-lib-none
-          restore-keys: xemu-ios-lib-
+          restore-keys: xemu-ios-lib-jit-
 
       - name: Show which backend is linked
         run: |
@@ -126,12 +126,7 @@ jobs:
            github.event_name == 'workflow_run')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh release delete latest --cleanup-tag --yes 2>/dev/null || true
-          gh release create latest Ember-unsigned.ipa \
-            --target "$GITHUB_SHA" --prerelease --title "Latest build" \
-            --notes "Newest build of main ($(git rev-parse --short HEAD), $(date -u '+%Y-%m-%d %H:%M UTC')). Unsigned: install with AltStore, SideStore or Sideloadly."
+        run: .github/publish-latest.sh Ember-unsigned.ipa
 
       # ---- Signed build (only when secrets are configured) -----------------
       - name: Install certificate and provisioning profile
@@ -239,3 +234,76 @@ jobs:
         run: |
           security delete-keychain "$SIGNING_KEYCHAIN" || true
           rm -f "$RUNNER_TEMP"/certificate.p12 "$RUNNER_TEMP"/profile.mobileprovision "$RUNNER_TEMP"/profile.plist
+
+  # The same app on TCG's interpreter, for running without JIT. Installs next
+  # to the normal app (own bundle ID and name). Unsigned only.
+  ipa-nojit:
+    runs-on: macos-latest
+    needs: core-tests
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install tools
+        run: brew install xcodegen ldid
+
+      - name: Restore xemu libraries (interpreter build)
+        uses: actions/cache/restore@v4
+        with:
+          path: build-deps/xemu-lib
+          key: xemu-ios-lib-none
+          restore-keys: xemu-ios-lib-nojit-
+
+      - name: Check the libraries are there
+        id: libs
+        run: |
+          if grep -q EMBER_XEMU_TCI build-deps/xemu-lib/ember-xemu.xcconfig 2>/dev/null; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::No interpreter-build xemu libraries in the cache yet; skipping the NoJIT app."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate Xcode project
+        if: steps.libs.outputs.found == 'true'
+        run: xcodegen generate
+
+      - name: Build without signing
+        if: steps.libs.outputs.found == 'true'
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Ember.xcodeproj -scheme Ember -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package unsigned .ipa
+        if: steps.libs.outputs.found == 'true'
+        run: |
+          APP=build/Build/Products/Release-iphoneos/Ember.app
+          ldid -SResources/Ember.entitlements "$APP/Ember"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' -c 'Print :CFBundleDisplayName' "$APP/Info.plist"
+          mkdir -p unsigned/Payload
+          cp -R "$APP" unsigned/Payload/
+          (cd unsigned && zip -qry ../Ember-NoJIT-unsigned.ipa Payload)
+
+      - uses: actions/upload-artifact@v4
+        if: steps.libs.outputs.found == 'true'
+        with:
+          name: Ember-NoJIT-unsigned-ipa
+          path: Ember-NoJIT-unsigned.ipa
+          if-no-files-found: error
+
+      - name: Publish to the "latest" release
+        if: >-
+          steps.libs.outputs.found == 'true' && github.ref == 'refs/heads/main' &&
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+           github.event_name == 'workflow_run')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/publish-latest.sh Ember-NoJIT-unsigned.ipa
